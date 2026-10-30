@@ -15,11 +15,11 @@ Everything runs on GitHub for free: a scheduled Actions job collects the data an
 ## How it works
 
 ```
-schools.tks.world  ──(public page, every minute)──▶  collector/collect.py  ──▶  data/*.json(l)  ──▶  GitHub Pages
+schools.tks.world  ──(vote feed every 30 s, full page every 10 min)──▶  collector/collect.py  ──▶  data/*.json(l)  ──▶  GitHub Pages
                                                       (GitHub Actions)          (committed)          site/ + data/
 ```
 
-1. **Collect.** `collect.yml` starts every 15 minutes and each run reads the public ballot page once a minute for about 28 minutes, so the next run is always queued and collection never stops, even when GitHub delays a scheduled start. Every change is committed to `data/`.
+1. **Collect.** `collect.yml` checks the vote totals every 30 seconds. Each run lasts about 5.5 hours and then starts the next run itself, so collection doesn't depend on GitHub's scheduler (a 30-minute schedule is only a backup). Most checks read the small JSON vote feed the ballot page itself polls (`/api/vote-stats`, ~8 KB); every 10 minutes it reads the full page again for names and new projects. Every change is committed to `data/`. Pushing collector changes restarts it with the new code. It stops an hour after voting closes.
 2. **Deploy.** When a run collected something new, it rebuilds and deploys the site.
 3. **Refresh.** The dashboard checks for new data every 20 seconds. About every 75 seconds it also asks the GitHub API for the newest commit and loads the data from exactly that commit, which skips GitHub's 5-minute file cache, so new votes usually show up within 1–2 minutes. GitHub allows 60 anonymous API calls an hour per network; if a shared network (say, a whole school) runs low, the page pauses API checks until the limit resets and uses the cached files (at most ~5 minutes old) in the meantime.
 
@@ -59,9 +59,9 @@ Unchanged totals don't create a new line; they extend `u` at most every 5 minute
 1. Push this repository to GitHub. It needs to be **public** for free Pages hosting and free Actions minutes (the collector runs almost continuously).
 2. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
 3. **Actions** tab → enable workflows if asked.
-4. Run **Actions → Collect votes → Run workflow** once. It collects, commits and deploys. The site appears at `https://USERNAME.github.io/REPOSITORY/`.
+4. Run **Actions → Collect votes → Run workflow** once (or push a change to `collector/`). From then on it keeps itself running. The site appears at `https://USERNAME.github.io/REPOSITORY/`.
 
-After that, everything runs by itself. To stop after voting closes, disable the *Collect votes* workflow (Actions → Collect votes → ⋯ → Disable workflow).
+After that, everything runs by itself and stops after voting closes. To stop it early, disable the *Collect votes* workflow (Actions → Collect votes → ⋯ → Disable workflow).
 
 Settings live in `site/config.js` (tracked project, close time, refresh interval, stale threshold).
 

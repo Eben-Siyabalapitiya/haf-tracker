@@ -1,28 +1,39 @@
 name: Collect votes
 
 on:
-  schedule:
-    # Each run collects once a minute for ~28 minutes. Starting one every 15 minutes means
-    # the next run is always queued, so collection stays continuous even when GitHub
-    # delays a scheduled start.
-    - cron: "*/15 * * * *"
+  # Each run collects every 30 seconds for ~5.5 hours, then starts the next run itself,
+  # so collection doesn't depend on GitHub's scheduler (which can be late or skip runs).
   workflow_dispatch:
     inputs:
       minutes:
         description: "How long this run keeps collecting (minutes)"
-        default: "28"
+        default: "330"
+  # Restart right away when the collector itself changes.
+  push:
+    branches: [main]
+    paths:
+      - "collector/**"
+      - "scripts/collect_loop.sh"
+      - ".github/workflows/collect.yml"
+  # Backup in case the chain ever breaks. Queues behind a running collector.
+  schedule:
+    - cron: "*/30 * * * *"
 
 permissions: {}
 
-# One collector at a time. A newer run waits instead of overlapping.
+# One collector at a time. A newer run waits instead of overlapping, except that a push
+# with new collector code replaces the running one right away.
 concurrency:
   group: collect-votes
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
+env:
+  STOP_AFTER: "2026-11-01T05:00:00Z"   # an hour after voting closes
 
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 350
     permissions:
       contents: write
     outputs:
@@ -39,22 +50,40 @@ jobs:
       - name: Collect snapshots
         id: loop
         env:
-          MINUTES: ${{ inputs.minutes || '28' }}
-          INTERVAL: "60"
+          MINUTES: ${{ inputs.minutes || '330' }}
+          INTERVAL: "30"
           BRANCH: ${{ github.ref_name }}
-          # Manual runs fail loudly if the source can't be read; scheduled runs just record it.
-          STRICT: ${{ github.event_name == 'workflow_dispatch' && '--fail-on-error' || '' }}
         run: |
           # Data commits are attributed to the repository owner.
           git config user.name "${{ github.repository_owner }}"
           git config user.email "${{ github.repository_owner_id }}+${{ github.repository_owner }}@users.noreply.github.com"
+          if [[ "$(date -u +%FT%TZ)" > "$STOP_AFTER" ]]; then
+            MINUTES=1
+          fi
           bash scripts/collect_loop.sh
 
   deploy:
     needs: collect
-    if: ${{ !cancelled() && (needs.collect.outputs.changed == 'true' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ !cancelled() }}
     permissions:
       contents: read
       pages: write
       id-token: write
     uses: ./.github/workflows/site.yml
+
+  next:
+    needs: collect
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Start the next run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "$(date -u +%FT%TZ)" > "$STOP_AFTER" ]]; then
+            echo "Voting is over; not starting another run."
+            exit 0
+          fi
+          gh workflow run collect.yml --repo "${{ github.repository }}" --ref "${{ github.ref_name }}"
