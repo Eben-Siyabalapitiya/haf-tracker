@@ -84,6 +84,17 @@ export const cases = [
     eq(ev.map((e) => [e.slug, e.delta]), [['a', -3]]);
   }],
 
+  ['removed votes add up every drop, even when later gains hide them', () => {
+    const r = recs(
+      ['2026-10-29T13:00:00Z', '2026-10-29T13:00:00Z', { a: 40, b: 10 }],
+      ['2026-10-29T13:05:00Z', '2026-10-29T13:05:00Z', { a: 35, b: 12 }],   // a −5
+      ['2026-10-29T13:10:00Z', '2026-10-29T13:10:00Z', { a: 45, b: 12 }],   // a +10
+      ['2026-10-29T13:15:00Z', '2026-10-29T13:15:00Z', { a: 43, b: 12 }]);  // a −2
+    eq(M.removedSince(r), { a: { removed: 7, times: 2 } });
+    eq(M.removedSince(r, iso('2026-10-29T13:12:00Z')), { a: { removed: 2, times: 1 } });
+    eq(M.changeFor(r, 'a', { time: r[0].t, counts: r[0].c }).delta, 3);   // net is still reported
+  }],
+
   ['new projects never count their whole total as gained', () => {
     const r = recs(
       ['2026-10-29T13:00:00Z', '2026-10-29T13:00:00Z', { a: 40 }],
