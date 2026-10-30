@@ -1,0 +1,59 @@
+name: Collect votes
+
+on:
+  schedule:
+    # Every 15 minutes. Each run keeps collecting every 3 minutes for ~13 minutes,
+    # so collection is close to continuous even when GitHub delays a scheduled start.
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "How long this run keeps collecting (minutes)"
+        default: "13"
+
+permissions: {}
+
+# One collector at a time. A newer run waits instead of overlapping.
+concurrency:
+  group: collect-votes
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.loop.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Collect snapshots
+        id: loop
+        env:
+          MINUTES: ${{ inputs.minutes || '13' }}
+          INTERVAL: "180"
+          BRANCH: ${{ github.ref_name }}
+          # Manual runs fail loudly if the source can't be read; scheduled runs just record it.
+          STRICT: ${{ github.event_name == 'workflow_dispatch' && '--fail-on-error' || '' }}
+        run: |
+          # Data commits are attributed to the repository owner.
+          git config user.name "${{ github.repository_owner }}"
+          git config user.email "${{ github.repository_owner_id }}+${{ github.repository_owner }}@users.noreply.github.com"
+          bash scripts/collect_loop.sh
+
+  deploy:
+    needs: collect
+    if: ${{ !cancelled() && (needs.collect.outputs.changed == 'true' || github.event_name == 'workflow_dispatch') }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/site.yml
