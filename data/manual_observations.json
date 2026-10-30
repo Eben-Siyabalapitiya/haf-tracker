@@ -1,0 +1,299 @@
+{
+ "description": "Leaderboard checks recorded by hand on October 28-29, 2026 (America/Toronto). Their chronological order is known; the exact time of each check was not preserved, so observed_at is null and no intervals are assumed. null means not recorded, not zero.",
+ "unit": "weighted votes (newsletter-confirmed votes count double); not unique voters",
+ "timezone": "America/Toronto",
+ "used_for": "history display only; excluded from per-hour rate calculations",
+ "projects": {
+  "hack-the-rex-7615bd": "Hack The Rex",
+  "create-conference-council-d3bca3": "CREATE Conference Council",
+  "st-robert-catholic-high-school-hosa-f148cc": "St. Robert Catholic High School HOSA",
+  "blankisyours-200345": "BlankIsYours",
+  "support-team-faraday-an-ftc-robotics-team-710b11": "Support Team Faraday: An FTC Robotics Team",
+  "open-minds-foundation-3b1aae": "Open Minds Foundation",
+  "mac-design-cup-2026-8bb8ef": "Mac Design Cup 2026",
+  "lane-tech-science-olympiad-build-clinic-82c03a": "Lane Tech Science Olympiad Build Clinic",
+  "ramp-it-up-building-ramps-for-improved-accessibility-436257": "Ramp it up! Building Ramps for improved accessibility"
+ },
+ "observations": [
+  {
+   "observation_order": 1,
+   "observed_at": null,
+   "date_range": [
+    "2026-10-28",
+    "2026-10-29"
+   ],
+   "source": "manual leaderboard checks",
+   "totals": {
+    "hack-the-rex-7615bd": 579,
+    "create-conference-council-d3bca3": null,
+    "st-robert-catholic-high-school-hosa-f148cc": 647,
+    "blankisyours-200345": 648,
+    "support-team-faraday-an-ftc-robotics-team-710b11": 641,
+    "open-minds-foundation-3b1aae": 609,
+    "mac-design-cup-2026-8bb8ef": 620,
+    "lane-tech-science-olympiad-build-clinic-82c03a": null,
+    "ramp-it-up-building-ramps-for-improved-accessibility-436257": null
+   }
+  },
+  {
+   "observation_order": 2,
+   "observed_at": null,
+   "date_range": [
+    "2026-10-28",
+    "2026-10-29"
+   ],
+   "source": "manual leaderboard checks",
+   "totals": {
+    "hack-the-rex-7615bd": 661,
+    "create-conference-council-d3bca3": null,
+    "st-robert-catholic-high-school-hosa-f148cc": 661,
+    "blankisyours-200345": 654,
+    "support-team-faraday-an-ftc-robotics-team-710b11": 645,
+    "open-minds-foundation-3b1aae": null,
+    "mac-design-cup-2026-8bb8ef": 620,
+    "lane-tech-science-olympiad-build-clinic-82c03a": null,
+    "ramp-it-up-building-ramps-for-improved-accessibility-436257": null
+   }
+  },
+  {
+   "observation_order": 3,
+   "observed_at": null,
+   "date_range": [
+    "2026-10-28",
+    "2026-10-29"
+   ],
+   "source": "manual leaderboard checks",
+   "totals": {
+    "hack-the-rex-7615bd": 697,
+    "create-conference-council-d3bca3": null,
+    "st-robert-catholic-high-school-hosa-f148cc": 663,
+    "blankisyours-200345": 655,
+    "support-team-faraday-an-ftc-robotics-team-710b11": 645,
+    "open-minds-foundation-3b1aae": null,
+    "mac-design-cup-2026-8bb8ef": 620,
+    "lane-tech-science-olympiad-build-clinic-82c03a": null,
+    "ramp-it-up-building-ramps-for-improved-accessibility-436257": null
+   }
+  },
+  {
+   "observation_order": 4,
+   "observed_at": null,
+   "date_range": [
+    "2026-10-28",
+    "2026-10-29"
+   ],
+   "source": "manual leaderboard checks",
+   "totals": {
+    "hack-the-rex-7615bd": 699,
+    "create-conference-council-d3bca3": 601,
+    "st-robert-catholic-high-school-hosa-f148cc": 663,
+    "blankisyours-200345": 655,
+    "support-team-faraday-an-ftc-robotics-team-710b11": 645,
+    "open-minds-foundation-3b1aae": 609,
+    "mac-design-cup-2026-8bb8ef": 620,
+    "lane-tech-science-olympiad-build-clinic-82c03a": null,
+    "ramp-it-up-building-ramps-for-improved-accessibility-436257": null
+   }
+  },
+  {
+   "observation_order": 5,
+   "observed_at": null,
+   "date_range": [
+    "2026-10-28",
+    "2026-10-29"
+   ],
+   "source": "manual leaderboard checks",
+   "totals": {
+    "hack-the-rex-7615bd": 724,
+    "create-conference-council-d3bca3": null,
+    "st-robert-catholic-high-school-hosa-f148cc": 664,
+    "blankisyours-200345": 656,
+    "support-team-faraday-an-ftc-robotics-team-710b11": 645,
+    "open-minds-foundation-3b1aae": null,
+    "mac-design-cup-2026-8bb8ef": 620,
+    "lane-tech-science-olympiad-build-clinic-82c03a": null,
+    "ramp-it-up-building-ramps-for-improved-accessibility-436257": null
+   }
+  },
+  {
+   "observation_order": 6,
+   "observed_at": null,
+   "date_range": [
+    "2026-10-28",
+    "2026-10-29"
+   ],
+   "source": "manual leaderboard checks",
+   "totals": {
+    "hack-the-rex-7615bd": 734,
+    "create-conference-council-d3bca3": 607,
+    "st-robert-catholic-high-school-hosa-f148cc": 664,
+    "blankisyours-200345": 656,
+    "support-team-faraday-an-ftc-robotics-team-710b11": 645,
+    "open-minds-foundation-3b1aae": 629,
+    "mac-design-cup-2026-8bb8ef": 620,
+    "lane-tech-science-olympiad-build-clinic-82c03a": null,
+    "ramp-it-up-building-ramps-for-improved-accessibility-436257": null
+   }
+  },
+  {
+   "observation_order": 7,
+   "observed_at": null,
+   "date_range": [
+    "2026-10-28",
+    "2026-10-29"
+   ],
+   "source": "manual leaderboard checks",
+   "totals": {
+    "hack-the-rex-7615bd": 780,
+    "create-conference-council-d3bca3": null,
+    "st-robert-catholic-high-school-hosa-f148cc": 665,
+    "blankisyours-200345": 657,
+    "support-team-faraday-an-ftc-robotics-team-710b11": 647,
+    "open-minds-foundation-3b1aae": 629,
+    "mac-design-cup-2026-8bb8ef": null,
+    "lane-tech-science-olympiad-build-clinic-82c03a": null,
+    "ramp-it-up-building-ramps-for-improved-accessibility-436257": null
+   }
+  },
+  {
+   "observation_order": 8,
+   "observed_at": null,
+   "date_range": [
+    "2026-10-28",
+    "2026-10-29"
+   ],
+   "source": "manual leaderboard checks",
+   "totals": {
+    "hack-the-rex-7615bd": 781,
+    "create-conference-council-d3bca3": null,
+    "st-robert-catholic-high-school-hosa-f148cc": null,
+    "blankisyours-200345": null,
+    "support-team-faraday-an-ftc-robotics-team-710b11": null,
+    "open-minds-foundation-3b1aae": null,
+    "mac-design-cup-2026-8bb8ef": null,
+    "lane-tech-science-olympiad-build-clinic-82c03a": null,
+    "ramp-it-up-building-ramps-for-improved-accessibility-436257": null
+   }
+  },
+  {
+   "observation_order": 9,
+   "observed_at": null,
+   "date_range": [
+    "2026-10-28",
+    "2026-10-29"
+   ],
+   "source": "manual leaderboard checks",
+   "totals": {
+    "hack-the-rex-7615bd": 810,
+    "create-conference-council-d3bca3": 638,
+    "st-robert-catholic-high-school-hosa-f148cc": 665,
+    "blankisyours-200345": 657,
+    "support-team-faraday-an-ftc-robotics-team-710b11": 649,
+    "open-minds-foundation-3b1aae": 629,
+    "mac-design-cup-2026-8bb8ef": 620,
+    "lane-tech-science-olympiad-build-clinic-82c03a": null,
+    "ramp-it-up-building-ramps-for-improved-accessibility-436257": null
+   }
+  },
+  {
+   "observation_order": 10,
+   "observed_at": null,
+   "date_range": [
+    "2026-10-28",
+    "2026-10-29"
+   ],
+   "source": "manual leaderboard checks",
+   "totals": {
+    "hack-the-rex-7615bd": 820,
+    "create-conference-council-d3bca3": 638,
+    "st-robert-catholic-high-school-hosa-f148cc": 665,
+    "blankisyours-200345": 657,
+    "support-team-faraday-an-ftc-robotics-team-710b11": 649,
+    "open-minds-foundation-3b1aae": 629,
+    "mac-design-cup-2026-8bb8ef": null,
+    "lane-tech-science-olympiad-build-clinic-82c03a": null,
+    "ramp-it-up-building-ramps-for-improved-accessibility-436257": null
+   }
+  },
+  {
+   "observation_order": 11,
+   "observed_at": null,
+   "date_range": [
+    "2026-10-28",
+    "2026-10-29"
+   ],
+   "source": "manual leaderboard checks",
+   "totals": {
+    "hack-the-rex-7615bd": 833,
+    "create-conference-council-d3bca3": 638,
+    "st-robert-catholic-high-school-hosa-f148cc": 668,
+    "blankisyours-200345": 657,
+    "support-team-faraday-an-ftc-robotics-team-710b11": 649,
+    "open-minds-foundation-3b1aae": 629,
+    "mac-design-cup-2026-8bb8ef": null,
+    "lane-tech-science-olympiad-build-clinic-82c03a": null,
+    "ramp-it-up-building-ramps-for-improved-accessibility-436257": null
+   }
+  },
+  {
+   "observation_order": 12,
+   "observed_at": null,
+   "date_range": [
+    "2026-10-28",
+    "2026-10-29"
+   ],
+   "source": "manual leaderboard checks",
+   "totals": {
+    "hack-the-rex-7615bd": 1044,
+    "create-conference-council-d3bca3": 753,
+    "st-robert-catholic-high-school-hosa-f148cc": 704,
+    "blankisyours-200345": 666,
+    "support-team-faraday-an-ftc-robotics-team-710b11": 687,
+    "open-minds-foundation-3b1aae": 668,
+    "mac-design-cup-2026-8bb8ef": null,
+    "lane-tech-science-olympiad-build-clinic-82c03a": null,
+    "ramp-it-up-building-ramps-for-improved-accessibility-436257": null
+   }
+  },
+  {
+   "observation_order": 13,
+   "observed_at": null,
+   "date_range": [
+    "2026-10-28",
+    "2026-10-29"
+   ],
+   "source": "manual leaderboard checks",
+   "totals": {
+    "hack-the-rex-7615bd": 1044,
+    "create-conference-council-d3bca3": 759,
+    "st-robert-catholic-high-school-hosa-f148cc": 704,
+    "blankisyours-200345": 666,
+    "support-team-faraday-an-ftc-robotics-team-710b11": 687,
+    "open-minds-foundation-3b1aae": 668,
+    "mac-design-cup-2026-8bb8ef": null,
+    "lane-tech-science-olympiad-build-clinic-82c03a": 656,
+    "ramp-it-up-building-ramps-for-improved-accessibility-436257": 641
+   }
+  },
+  {
+   "observation_order": 14,
+   "observed_at": null,
+   "date_range": [
+    "2026-10-28",
+    "2026-10-29"
+   ],
+   "source": "manual leaderboard checks",
+   "totals": {
+    "hack-the-rex-7615bd": 1054,
+    "create-conference-council-d3bca3": 796,
+    "st-robert-catholic-high-school-hosa-f148cc": 707,
+    "blankisyours-200345": 672,
+    "support-team-faraday-an-ftc-robotics-team-710b11": 689,
+    "open-minds-foundation-3b1aae": 694,
+    "mac-design-cup-2026-8bb8ef": null,
+    "lane-tech-science-olympiad-build-clinic-82c03a": null,
+    "ramp-it-up-building-ramps-for-improved-accessibility-436257": null
+   }
+  }
+ ]
+}

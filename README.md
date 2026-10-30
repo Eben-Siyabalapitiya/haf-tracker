@@ -29,7 +29,12 @@ The source has no API that browsers on other sites are allowed to call (no CORS)
 
 The page is a Next.js app. Its embedded data holds a `voteCounts` map (slug → total), the project list (`items`), and a `LiveVoteCount` entry per project. The collector reads `voteCounts`, cross-checks it against `LiveVoteCount`, and rejects the scrape if anything disagrees, is duplicated, malformed, or if too many projects disappear at once. If the structure changes it falls back to the `LiveVoteCount` rows, then to a plain pattern match. Failed scrapes never overwrite good data.
 
-The page also exposes "Best day" (`initialDay`) and a 7-day figure (`weekVotes`). Neither is a daily history and their exact definitions aren't documented, so they're stored in `projects.json` for reference only. All change calculations use our own snapshots.
+The page also exposes two historical fields, checked on 2026-10-30:
+
+- **`initialDay`** — each project's single best day (`{votes, date}`), shown as "Best day: +N". It matches the `days` field of the vote feed, is missing only for projects with 0 votes, never exceeds the total, and is dated between the publish date and the server's `today` (a Toronto date). It's one dated fact per project, not a daily series. Every new value is logged in `data/source_best_days.json`.
+- **`weekVotes`** — a trailing ~7-day total. Across Toronto midnight it fell for some projects whose totals were flat or rising (old votes leaving the window), and for projects published in the last 7 days it equals their total. The exact window boundary isn't documented.
+
+The change columns only ever use our own snapshots. `weekVotes` feeds the long-term pace in predictions.
 
 Only the public page is read, with ordinary GET requests. Nothing touches the voting form.
 
@@ -40,6 +45,9 @@ Only the public page is read, with ordinary GET requests. Nothing touches the vo
 | `data/snapshots.jsonl` | One line per distinct set of totals: `t` = first seen, `u` = last confirmed unchanged, then `c` (all totals) or `d` (only what changed; `null` = no longer listed). A full `c` line is written every 48 lines. |
 | `data/projects.json` | Names, schools, first/last seen, and the source's own best-day and 7-day figures. |
 | `data/status.json` | Last successful collection, last error, parser used. |
+| `data/source_best_days.json` | Every best-day value the source has shown, per project, with when we first saw it. |
+| `data/manual_observations.json` | 14 leaderboard checks recorded by hand on Oct 28–29 (Toronto). Order is known, times aren't (`observed_at: null`); `null` = not recorded. Shown as history only, never used for per-hour rates. |
+| `data/reference_daily_gains.json` | Best days noted during earlier checks, each verified against the source (`verified`, or `superseded` when the source now shows a better day). |
 
 Unchanged totals don't create a new line; they extend `u` at most every 5 minutes, so quiet periods don't spam commits but the observed time range stays accurate.
 
@@ -50,7 +58,7 @@ Unchanged totals don't create a new line; they extend `u` at most every 5 minute
 - **Today** uses Toronto midnight (±45 min). If tracking started after midnight it's labelled *since tracking began*; if collection had a gap at midnight it's labelled *since* the first collection that day.
 - **New projects** are marked *new*; their gain is counted from when they were first seen, never from zero.
 - **Decreases** show in red, appear in the feed and raise a banner for 24 hours.
-- **Projections** extend each project's pace over the last 24h (or all history, if shorter) in a straight line to the close (Oct 31, 11:59 PM ET). They need at least an hour of data and are a rough guide only.
+- **Predictions** blend three measured paces so they react to bursts and slowdowns without trusting one stretch of time: *recent* (last 3h, or 1h), *last day* (24h, or 12h/6h; needs that much of our own history) and *7-day* (the source's trailing-week total over the part of the week the project existed). Weights are 25/35/40%, re-weighted over whichever exist. The range uses the slowest and fastest of those paces for the time left; *speeding up / slowing down* compares the recent pace with the longer one. Removals (negative pace) stay visible in the breakdown but never project a decline. The close is Oct 31, 11:59 PM ET (checked against the rules: "All cutoffs are 11:59 PM Eastern. There is no grace period."). Newsletter confirmations can double a voter's earlier votes at once and removals take votes away, so real totals can jump either way.
 - All timestamps are stored in UTC and shown in Toronto time.
 - If no collection succeeds for 15 minutes the dashboard shows **Stale**; if the last attempt failed it shows the error.
 

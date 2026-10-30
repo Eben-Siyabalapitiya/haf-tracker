@@ -47,7 +47,8 @@ def main():
     bust_cache(args.out)
     out_data = os.path.join(args.out, "data")
     os.makedirs(out_data, exist_ok=True)
-    for name in ("snapshots.jsonl", "projects.json", "status.json"):
+    for name in ("snapshots.jsonl", "projects.json", "status.json", "source_best_days.json",
+                 "manual_observations.json", "reference_daily_gains.json"):
         src = os.path.join(args.data_dir, name)
         if os.path.exists(src):
             shutil.copy2(src, out_data)

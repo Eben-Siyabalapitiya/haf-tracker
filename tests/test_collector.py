@@ -191,6 +191,32 @@ class VoteFeedTests(unittest.TestCase):
             shutil.rmtree(d)
 
 
+class SourceHistoryTests(unittest.TestCase):
+    def test_best_day_log_keeps_each_dated_value(self):
+        r = tracker.parse_page(make_page())
+        log = tracker.update_best_days({}, r, T0)
+        self.assertEqual(log["fuse-society-5b1e6b"], [{"date": "2026-10-28", "votes": 5, "first_seen": "2026-10-29T14:00:00Z", "updated": "2026-10-29T14:00:00Z"}])
+        r.projects["fuse-society-5b1e6b"].best_day = {"date": "2026-10-28", "votes": 9}     # same day grew
+        log = tracker.update_best_days(log, r, T0 + timedelta(hours=1))
+        self.assertEqual(len(log["fuse-society-5b1e6b"]), 1)
+        self.assertEqual(log["fuse-society-5b1e6b"][0]["votes"], 9)
+        r.projects["fuse-society-5b1e6b"].best_day = {"date": "2026-10-30", "votes": 40}    # a new best day
+        log = tracker.update_best_days(log, r, T0 + timedelta(days=1))
+        self.assertEqual([e["date"] for e in log["fuse-society-5b1e6b"]], ["2026-10-28", "2026-10-30"])
+
+    def test_week_votes_only_refresh_from_the_full_page(self):
+        full = tracker.parse_page(make_page())
+        meta = tracker.update_projects({}, full, T0)
+        self.assertEqual(meta["fuse-society-5b1e6b"]["source_week_votes"], 180)
+        self.assertEqual(meta["fuse-society-5b1e6b"]["source_week_votes_at"], "2026-10-29T14:00:00Z")
+        self.assertEqual(meta["fuse-society-5b1e6b"]["published_on"], "2026-10-04")
+        feed = json.dumps({"counts": {s: n for s, _, _, n in PROJECTS}, "days": {}, "checkedAt": 1})
+        quick = tracker.parse_vote_stats(feed, meta)
+        meta = tracker.update_projects(meta, quick, T0 + timedelta(minutes=5))
+        self.assertEqual(meta["fuse-society-5b1e6b"]["source_week_votes_at"], "2026-10-29T14:00:00Z")
+        self.assertEqual(meta["fuse-society-5b1e6b"]["published_on"], "2026-10-04")
+
+
 class StorageTests(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()

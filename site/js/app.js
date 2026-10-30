@@ -223,6 +223,8 @@ function render() {
   renderBoard(d);
   renderFeed(d);
   renderProjection(d);
+  renderHistory(d);
+  loadHistory();
 }
 
 function renderEmpty() {
@@ -318,10 +320,10 @@ function renderHero(d) {
   }
   const tc = M.changeFor(d.records, HL, d.bases.today, d.cur);
   out.push(stat('Today', tc.status === 'collecting' ? '<span class="zero">—</span>' : `<span class="${cls(tc.delta)}">${signed(tc.delta)}</span>`, esc(todayLabel(d))));
-  const p = M.project(d.records, CLOSE);
-  if (p && Date.now() < CLOSE) {
+  const p = getForecast(d);
+  if (p && HL in p.projected) {
     const pr = M.rankMap(p.projected)[HL];
-    out.push(stat('Projected final', `~${fmt(p.projected[HL])}`, `projected #${pr} at close`));
+    out.push(stat('Predicted final', `~${fmt(p.projected[HL])}`, `${fmt(p.low[HL])}–${fmt(p.high[HL])} · #${pr} at close`));
   } else if (Date.now() >= CLOSE) {
     out.push(stat('Final', fmt(counts[HL]), 'voting has closed'));
   } else {
@@ -407,15 +409,15 @@ function renderChart(d) {
   $('chips').innerHTML = sel.map((s) => `<span class="chip"><i style="background:${colorFor(s, sel)}"></i><span>${esc(title(s))}</span><button type="button" data-unselect="${esc(s)}" aria-label="Remove ${esc(title(s))}">×</button></span>`).join('');
   const custom = Array.isArray(state.selected);
   for (const b of $('showSeg').children) b.setAttribute('aria-pressed', String(!custom && b.dataset.show === state.show));
-  const canProject = Date.now() < CLOSE && !!M.project(d.records, CLOSE);
+  const canProject = !!getForecast(d);
   const sw = $('projToggle');
   sw.setAttribute('aria-checked', String(state.showProj && canProject));
   sw.classList.toggle('waiting', !canProject);
-  sw.querySelector('span').textContent = canProject || Date.now() >= CLOSE ? 'Predictions' : 'Predictions · after 1h of data';
+  sw.querySelector('span').textContent = 'Predictions';
 
   const from = state.range ? d.cur.time - state.range * HOUR : -Infinity;
-  const proj = state.showProj && Date.now() < CLOSE ? M.project(d.records, CLOSE) : null;
-  const projNote = proj ? ` Faded dashed lines continue each project's pace over the last ${dur(proj.spanMs)} to the close. A rough guide, not a forecast.`
+  const proj = state.showProj ? getForecast(d) : null;
+  const projNote = proj ? ' Faded dashed lines blend recent, daily and weekly pace up to the close; the shaded band is the range. A rough guide, not a forecast.'
     : state.showProj && Date.now() < CLOSE ? ' Prediction lines appear after 1 hour of collections.' : '';
 
   const race = state.chart === 'race';
@@ -459,6 +461,16 @@ function renderChart(d) {
         pointHoverRadius: 5, tension: 0, order: 2, fill: false,
         endLabel: `${shortName(slug)}  ${fmtVal(end, true)}`,
       });
+      // Shaded range between the slowest and fastest measured pace, for Hack The Rex.
+      if (slug === HL && kind === 'totals') {
+        const band = (y, fillTo) => ({
+          label: 'range', slug, projection: true, band: true, data: [{ x: last.x, y: last.y }, { x: CLOSE, y }],
+          borderWidth: 0, pointRadius: 0, pointHoverRadius: 0, tension: 0, order: 3,
+          fill: fillTo, backgroundColor: color + '1f',
+        });
+        datasets.push(band(proj.low[slug], false));
+        datasets.push(band(proj.high[slug], '-1'));
+      }
     }
   }
   const points = Math.max(0, ...datasets.filter((x) => !x.projection).map((x) => x.data.length));
@@ -487,7 +499,7 @@ function renderChart(d) {
         itemSort: (a, b) => (isRank ? a.parsed.y - b.parsed.y : b.parsed.y - a.parsed.y),
         callbacks: {
           title: (items) => (items.length ? dtFmt.format(items[0].parsed.x) : ''),
-          label: (it) => ` ${it.dataset.label}: ${fmtVal(it.parsed.y, it.dataset.projection)}`,
+          label: (it) => (it.dataset.band ? null : ` ${it.dataset.label}: ${fmtVal(it.parsed.y, it.dataset.projection)}`),
         },
       },
     },
@@ -540,13 +552,15 @@ function renderRace(d, sel, from, proj) {
     return {
       slug, color: colorFor(slug, sel), rank: d.ranks[slug], now: d.cur.counts[slug],
       start: series.length ? series[0].y : d.cur.counts[slug], since: series.length ? series[0].x : d.cur.time,
-      fin: proj ? proj.projected[slug] : null,
+      fin: proj && slug in proj.projected ? proj.projected[slug] : null,
+      lo: proj && slug in proj.projected ? proj.low[slug] : null,
+      hi: proj && slug in proj.projected ? proj.high[slug] : null,
     };
   }).sort((a, b) => b.now - a.now);
   if (!rows.length) { $('race').innerHTML = '<div class="empty">Pick a project from the leaderboard to add it here.</div>'; return; }
   const cutoff = d.cur.counts[d.order[FUNDED - 1]];
   const lo = Math.min(cutoff, ...rows.map((r) => r.start));
-  const hi = Math.max(cutoff, ...rows.map((r) => r.fin ?? r.now));
+  const hi = Math.max(cutoff, ...rows.map((r) => r.hi ?? r.fin ?? r.now));
   const step = niceStep((hi - lo) / 5 || 10);
   const min = Math.max(0, Math.floor((lo - step * 0.4) / step) * step);
   const max = Math.ceil((hi + step * 0.3) / step) * step;
@@ -565,6 +579,7 @@ function renderRace(d, sel, from, proj) {
         ${ticks.map((t) => `<i class="grid" style="left:${pct(t)}%"></i>`).join('')}
         <i class="cut" style="left:${pct(cutoff)}%"></i>
         ${n >= s ? `<i class="trail" style="left:${s}%;width:${n - s}%"></i>` : `<i class="trail lost" style="left:${n}%;width:${s - n}%"></i>`}
+        ${r.hi != null && r.hi > r.lo ? `<i class="range" style="left:${pct(r.lo)}%;width:${pct(r.hi) - pct(r.lo)}%" data-tip="Predicted range ${fmt(r.lo)}–${fmt(r.hi)}"></i>` : ''}
         ${f != null && f > n ? `<i class="ghost" style="left:${n}%;width:${f - n}%"></i><i class="ghost-end" style="left:${f}%"></i><span class="fin" style="left:${f}%">~${fmt(r.fin)}</span>` : ''}
         <i class="dot" style="left:${n}%"></i>
         <span class="val" style="left:${n}%">${fmt(r.now)}</span>
@@ -759,30 +774,102 @@ function renderFeed(d) {
 
 // ---------------------------------------------------------------- projection
 
+const TREND = { up: ['▲', 'speeding up', 'up'], down: ['▼', 'slowing down', 'down'], steady: ['●', 'steady', 'zero'] };
+const getForecast = (d) => (Date.now() < CLOSE ? M.forecast(d.records, CLOSE, state.projects) : null);
+
+function paceRows(parts) {
+  return parts.map((p) => {
+    const span = p.source ? `trailing ~${Math.round(p.hours / 24)} days (source)` : `${when(p.from)} → ${when(p.to)}`;
+    return `<tr><td>${esc(p.label)}</td><td>${span}</td><td class="num ${p.rate < 0 ? 'down' : ''}">${p.rate.toFixed(1)}/h</td><td class="num">${Math.round(p.share * 100)}%</td></tr>`;
+  }).join('');
+}
+
 function renderProjection(d) {
   const el = $('projection');
   if (Date.now() >= CLOSE) {
     el.innerHTML = '<p class="note">Voting has closed. The leaderboard shows the last collected totals.</p>';
     return;
   }
-  const p = M.project(d.records, CLOSE);
-  if (!p) {
-    const have = d.cur.time - d.first;
-    el.innerHTML = `<div class="empty" style="margin-top:14px"><strong>Collecting history.</strong> Projections start after 1 hour of collections (${dur(have)} so far).</div>`;
+  const f = getForecast(d);
+  if (!f) {
+    el.innerHTML = '<div class="empty" style="margin-top:14px"><strong>Collecting history.</strong> Predictions start once a pace can be measured.</div>';
     return;
   }
-  const order = M.sortedSlugs(p.projected);
-  const pr = M.rankMap(p.projected);
-  let shown = order.slice(0, 7);
-  if (HL in p.projected && !shown.includes(HL)) shown = [...shown, HL];
-  const mine = p.projected[HL];
-  const g2 = HL in p.projected ? M.gapToPosition(p.projected, HL, pr[HL] === 1 ? 2 : FUNDED + 1) : null;
-  const head = HL in p.projected ? `<div class="proj-head"><span class="label">Hack The Rex at close</span><b>#${pr[HL]} · ~${fmt(mine)}</b>
-     ${g2 ? `<span class="${cls(g2.gap)}">${signed(g2.gap)}</span> vs ${esc(title(g2.other))} · pace ${p.pacePerHour[HL].toFixed(1)}/h` : ''}</div>` : '';
-  el.innerHTML = head + `<div class="proj">${shown.map((s) => `<div class="prow ${s === HL ? 'rex' : ''} ${pr[s] > FUNDED ? 'out' : ''}">
+  const pr = M.rankMap(f.projected);
+  let shown = M.sortedSlugs(f.projected).slice(0, 7);
+  if (HL in f.projected && !shown.includes(HL)) shown = [...shown, HL];
+  let head = '';
+  if (HL in f.projected) {
+    const g = M.gapToPosition(f.projected, HL, pr[HL] === 1 ? 2 : FUNDED + 1);
+    const t = TREND[f.trend[HL]];
+    head = `<div class="proj-head"><span class="label">Hack The Rex at close</span><b>#${pr[HL]} · ~${fmt(f.projected[HL])}</b>
+      <span class="zero">range ${fmt(f.low[HL])}–${fmt(f.high[HL])}</span> · <span class="${t[2]}">${t[0]} ${t[1]}</span>
+      ${g ? `<br><span class="${cls(g.gap)}">${signed(g.gap)}</span> vs ${esc(title(g.other))}` : ''}
+      <table class="paces"><tr><th>Pace</th><th>Measured over</th><th class="num">Votes/h</th><th class="num">Weight</th></tr>${paceRows(f.parts[HL])}</table></div>`;
+  }
+  el.innerHTML = head + `<div class="proj">${shown.map((s) => {
+    const t = TREND[f.trend[s]];
+    return `<div class="prow ${s === HL ? 'rex' : ''} ${pr[s] > FUNDED ? 'out' : ''}">
       <span class="r">${place(pr[s], false)}</span><span class="nm">${esc(title(s))}</span>
-      <span class="pv">~${fmt(p.projected[s])}<small>now ${fmt(d.cur.counts[s])} · ${p.pacePerHour[s].toFixed(1)}/h</small></span></div>`).join('')}</div>
-    <p class="note" data-tip="Each project's pace over the last ${dur(p.spanMs)} (${when(p.from)} → ${when(p.to)}), extended ${dur(p.remainingHours * HOUR)} to the close. Voting comes in bursts, so treat this as a rough guide.">Straight-line estimate · rough guide</p>`;
+      <span class="pv" data-tip="${esc(f.parts[s].map((p) => `${p.label}: ${p.rate.toFixed(1)}/h`).join('\n'))}">~${fmt(f.projected[s])}<small>${fmt(f.low[s])}–${fmt(f.high[s])} · <span class="${t[2]}">${t[0]}</span></small></span></div>`;
+  }).join('')}</div>
+    <p class="note" data-tip="Blends three measured paces: recent (last 1–3h), last day (6–24h) and the source's trailing 7-day total, weighted 25/35/40% (re-weighted when one is missing). The range uses the slowest and fastest of those paces for the ${dur(f.remainingHours * HOUR)} left. Weighted votes. Newsletter confirmations can double earlier votes at once and removals take votes away, so real totals can jump either way.">Blend of recent, daily and weekly pace · weighted votes</p>`;
+}
+
+// ---------------------------------------------------------------- earlier history
+
+const history = { manual: null, refs: null, best: null, loaded: false };
+
+async function loadHistory() {
+  if (history.loaded) return;
+  history.loaded = true;
+  const get = async (name) => { try { return JSON.parse(await getText(`data/${name}?v=${Date.now()}`)); } catch { return null; } };
+  [history.manual, history.refs, history.best] = await Promise.all(
+    ['manual_observations.json', 'reference_daily_gains.json', 'source_best_days.json'].map(get));
+  const d = derive();
+  if (d) renderHistory(d);
+}
+
+function renderHistory(d) {
+  const el = $('history');
+  if (!el) return;
+  const parts = [];
+  const m = history.manual;
+  if (m && m.observations?.length) {
+    const slugs = Object.keys(m.projects);
+    parts.push(`<div class="hist-head"><h3>Manual checks · Oct 28–29</h3><span class="zero">order known · times not recorded · — = not recorded</span></div>
+      <div class="hist-wrap"><table class="hist"><thead><tr><th class="num">#</th>${slugs.map((s) => `<th class="num ${s === HL ? 'rexcol' : ''}" title="${esc(m.projects[s])}">${esc(shortLabel(m.projects[s]))}</th>`).join('')}</tr></thead>
+      <tbody>${m.observations.map((o, i) => {
+        const prev = m.observations[i - 1];
+        return `<tr><td class="num zero">${o.observation_order}</td>${slugs.map((s) => {
+          const v = o.totals[s];
+          if (v == null) return '<td class="num zero">—</td>';
+          const pv = prev?.totals[s];
+          const jump = pv != null && v !== pv ? ` <small class="${cls(v - pv)}">${signed(v - pv)}</small>` : '';
+          return `<td class="num ${s === HL ? 'rexcol' : ''}">${fmt(v)}${jump}</td>`;
+        }).join('')}</tr>`;
+      }).join('')}</tbody></table></div>`);
+  }
+  const refs = history.refs?.entries || [];
+  if (refs.length) {
+    parts.push(`<div class="hist-head"><h3>Best days</h3><span class="zero">a project's single best day, not an average</span></div>
+      <div class="days">${refs.map((r) => {
+        const now = state.projects[r.slug]?.source_best_day;
+        const badge = r.status === 'verified' ? '<span class="badge ok">verified</span>' : r.status === 'superseded' ? '<span class="badge">beaten</span>' : '<span class="badge">unverified</span>';
+        const latest = now && (now.date !== r.date || now.votes !== r.net_daily_gain) ? ` → now +${fmt(now.votes)} on ${now.date}` : '';
+        return `<div class="day ${r.slug === HL ? 'rex' : ''}"><span class="nm">${esc(r.project)}</span><span>+${fmt(r.net_daily_gain)} on ${r.date}${latest}</span>${badge}</div>`;
+      }).join('')}</div>`);
+  }
+  el.innerHTML = parts.join('') || '<div class="empty">No earlier history loaded.</div>';
+}
+
+function shortLabel(t) {
+  const map = { 'Hack The Rex': 'Rex', 'CREATE Conference Council': 'CREATE', 'St. Robert Catholic High School HOSA': 'HOSA',
+    'BlankIsYours': 'Blank', 'Open Minds Foundation': 'Open Minds', 'Mac Design Cup 2026': 'Mac', 'Lane Tech Science Olympiad Build Clinic': 'Lane Tech' };
+  if (map[t]) return map[t];
+  if (/faraday/i.test(t)) return 'Faraday';
+  if (/^ramp/i.test(t)) return 'Ramp';
+  return t.split(' ')[0];
 }
 
 // ---------------------------------------------------------------- notifications
@@ -836,7 +923,7 @@ function bind() {
   });
   $('projToggle').addEventListener('click', () => {
     const d = derive();
-    if (d && !M.project(d.records, CLOSE)) { toast({ cls: '', label: 'Predictions', text: 'Predictions start once there is an hour of vote history.' }); return; }
+    if (d && !getForecast(d)) { toast({ cls: '', label: 'Predictions', text: Date.now() >= CLOSE ? 'Voting has closed.' : 'Predictions start once a pace can be measured.' }); return; }
     setPref('showProj', !state.showProj);
   });
   document.addEventListener('click', (e) => {
