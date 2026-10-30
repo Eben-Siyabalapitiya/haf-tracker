@@ -12,10 +12,17 @@ How the page is structured (inspected 2026-10-29):
   publishedRank, weekVotes}}) and ``today`` (the server's date).
 * Each project also has a ``LiveVoteCount`` row:
   ``{"slug": ..., "initialCount": N, "initialDay": {"votes": V, "date": D}, "checkedAt": ms}``.
-  ``initialCount`` equals ``voteCounts[slug]``. ``initialDay`` is what the page shows as
-  "Best day: +V votes" (the best single day, timezone undocumented). ``weekVotes`` looks
-  like a rolling 7-day total but is undocumented. Neither is a daily history, so they are
-  stored for reference only and never used in our change calculations.
+  ``initialCount`` equals ``voteCounts[slug]``. ``initialDay`` is the project's best single
+  day, shown on the page as "Best day: +V votes". Checked 2026-10-30: it is identical to the
+  vote feed's ``days`` field, missing only for projects with 0 votes, never larger than the
+  total, dated between the publish date and the server's ``today`` (a Toronto date). It is
+  one dated fact per project, not a daily series; each new value is logged to
+  ``data/source_best_days.json``.
+* ``weekVotes`` is a trailing ~7-day total: across Toronto midnight on 2026-10-30 it fell
+  for some projects whose totals were flat or rising (older votes leaving the window), and
+  for projects published within the last 7 days it equals their total. The exact window
+  boundary isn't documented. It is used as the long-term pace in projections, never for
+  the change columns.
 
 Parsing is layered so a structure change degrades loudly instead of silently:
   1. ballot props (``voteCounts`` + ``items``), cross-checked against LiveVoteCount rows;
@@ -73,6 +80,7 @@ class Project:
     interests: list = field(default_factory=list)
     best_day: dict | None = None
     week_votes: int | None = None
+    published_on: str | None = None
 
 
 @dataclass
@@ -276,6 +284,7 @@ def parse_page(page_html: str) -> ParseResult:
                 interests=list(fx.get("interests") or []),
                 best_day=lv.get("initialDay") if isinstance(lv.get("initialDay"), dict) else None,
                 week_votes=fx.get("weekVotes") if isinstance(fx.get("weekVotes"), int) else None,
+                published_on=fx.get("publishedOn") if isinstance(fx.get("publishedOn"), str) else None,
             )
         cycle = props.get("cycleId") if isinstance(props.get("cycleId"), str) else None
         result = ParseResult(projects, "ballot-props", checked, props.get("today"), warnings, cycle)
@@ -339,7 +348,7 @@ def parse_vote_stats(text: str, known: dict) -> ParseResult:
             slug=slug, title=k.get("title") or _humanize(slug), count=n, school=k.get("school", ""),
             interests=list(k.get("interests") or []),
             best_day=days.get(slug) if isinstance(days.get(slug), dict) else k.get("source_best_day"),
-            week_votes=k.get("source_week_votes"),
+            week_votes=k.get("source_week_votes"), published_on=k.get("published_on"),
         )
     return ParseResult(projects, "vote-feed", _ms_to_iso(data.get("checkedAt")))
 
@@ -478,15 +487,38 @@ def merge_snapshot(records: list, now: datetime, counts: dict, heartbeat: timede
 
 def update_projects(meta: dict, result: ParseResult, now: datetime) -> dict:
     stamp = iso(now)
+    full = result.strategy == "ballot-props"     # only the full page carries weekVotes
     for slug, p in result.projects.items():
         entry = meta.get(slug, {"first_seen": stamp})
         entry.update({
             "title": p.title, "school": p.school, "interests": p.interests, "last_seen": stamp,
-            # Source-reported figures, stored for reference only (see module docstring).
-            "source_best_day": p.best_day, "source_week_votes": p.week_votes,
+            "source_best_day": p.best_day, "published_on": p.published_on or entry.get("published_on"),
         })
+        if full or "source_week_votes" not in entry:
+            entry["source_week_votes"] = p.week_votes
+            entry["source_week_votes_at"] = stamp if p.week_votes is not None else None
         meta[slug] = entry
     return dict(sorted(meta.items()))
+
+
+def update_best_days(log: dict, result: ParseResult, now: datetime) -> dict:
+    """Keep every best-day value the source has shown: {slug: [{date, votes, first_seen, updated}]}.
+
+    A best day dated today can still grow during the day; that updates the same entry.
+    """
+    stamp = iso(now)
+    for slug, p in result.projects.items():
+        bd = p.best_day
+        if not (isinstance(bd, dict) and isinstance(bd.get("votes"), int) and isinstance(bd.get("date"), str)):
+            continue
+        entries = log.setdefault(slug, [])
+        last = entries[-1] if entries else None
+        if last and last["date"] == bd["date"]:
+            if last["votes"] != bd["votes"]:
+                last.update(votes=bd["votes"], updated=stamp)
+        else:
+            entries.append({"date": bd["date"], "votes": bd["votes"], "first_seen": stamp, "updated": stamp})
+    return dict(sorted(log.items()))
 
 
 class Store:
@@ -495,6 +527,7 @@ class Store:
         self.snapshots = os.path.join(data_dir, "snapshots.jsonl")
         self.projects = os.path.join(data_dir, "projects.json")
         self.status = os.path.join(data_dir, "status.json")
+        self.best_days = os.path.join(data_dir, "source_best_days.json")
 
     def record_success(self, result: ParseResult, now: datetime, heartbeat=HEARTBEAT) -> str:
         records = load_records(self.snapshots)
@@ -504,6 +537,8 @@ class Store:
         dump_records(self.snapshots, records)
         meta = update_projects(_read_json(self.projects, {}), result, now)
         _atomic_write(self.projects, json.dumps(meta, indent=1, ensure_ascii=False) + "\n")
+        best = update_best_days(_read_json(self.best_days, {}), result, now)
+        _atomic_write(self.best_days, json.dumps(best, indent=1) + "\n")
         status = _read_json(self.status, {})
         status.update({
             "source_url": SOURCE_URL,
@@ -518,6 +553,8 @@ class Store:
         })
         if result.cycle_id:
             status["cycle_id"] = result.cycle_id
+        if result.strategy == "ballot-props":
+            status["source_facts_at"] = iso(now)
         _atomic_write(self.status, json.dumps(status, indent=1) + "\n")
         return outcome
 

@@ -332,6 +332,94 @@ export function project(records, closeMs, maxSpan = 24 * HOUR) {
   return { projected, pacePerHour, from: base.time, to: cur.time, spanMs: cur.time - base.time, remainingHours: remaining };
 }
 
+// ------------------------------------------------------------------ blended forecast
+
+/**
+ * Three paces, each measured over a real window, blended so the forecast reacts to
+ * bursts and slowdowns without trusting any single stretch of time:
+ *   recent  last 3h (or 1h)       our snapshots; catches surges and lulls right now
+ *   day     last 24h (or 12h/6h)  our snapshots; smooths the overnight dip
+ *   week    trailing ~7 days      the source's weekVotes; the long-run baseline
+ * Weights are renormalised over whichever paces exist. The range is the lowest and
+ * highest pace applied to the remaining time. Negative paces (vote removals) are kept in
+ * the breakdown but count as 0 going forward.
+ */
+export const BLEND = [
+  { key: 'recent', label: 'Recent', windows: [3 * HOUR, 1 * HOUR], weight: 0.25 },
+  { key: 'day', label: 'Last day', windows: [24 * HOUR, 12 * HOUR, 6 * HOUR], weight: 0.35 },
+  { key: 'week', label: '7-day', weight: 0.40 },
+];
+
+/** Pace over a window ending at the latest collection, or null without history that far back. */
+export function measuredPace(records, slug, windowMs) {
+  const cur = current(records);
+  if (!cur || !(slug in cur.counts)) return null;
+  const base = baselineAt(records, cur.time - windowMs, windowMs * 0.25, cur.time);
+  if (!base || !(slug in base.counts)) return null;
+  const hours = (cur.time - base.time) / HOUR;
+  if (hours <= 0) return null;
+  const delta = cur.counts[slug] - base.counts[slug];
+  return { rate: delta / hours, delta, from: base.time, to: cur.time, hours };
+}
+
+/** Pace from the source's trailing-week total, over the part of the week the project existed. */
+export function weekPace(meta) {
+  const votes = meta?.source_week_votes, at = Date.parse(meta?.source_week_votes_at || '');
+  if (!Number.isFinite(votes) || !Number.isFinite(at)) return null;
+  let hours = 168;
+  if (meta.published_on) {
+    const start = zonedMidnight(Date.parse(meta.published_on + 'T12:00:00Z'));
+    hours = Math.min(168, (at - start) / HOUR);
+  }
+  if (!(hours >= 6)) return null;
+  return { rate: votes / hours, delta: votes, from: at - hours * HOUR, to: at, hours, source: true };
+}
+
+export function forecast(records, closeMs, projects = {}) {
+  const cur = current(records);
+  if (!cur) return null;
+  const remainingHours = Math.max(0, closeMs - cur.time) / HOUR;
+  const out = { at: cur.time, remainingHours, projected: {}, low: {}, high: {}, pacePerHour: {}, parts: {}, trend: {} };
+  let any = false;
+  for (const slug of Object.keys(cur.counts)) {
+    const parts = [];
+    for (const c of BLEND) {
+      let m = null;
+      if (c.key === 'week') m = weekPace(projects[slug]);
+      else {
+        for (const w of c.windows) {
+          // The "day" pace must look further back than the "recent" one to add anything.
+          if (c.key === 'day' && parts[0] && w <= parts[0].hours * HOUR * 1.5) break;
+          m = measuredPace(records, slug, w);
+          if (m) break;
+        }
+      }
+      if (m) parts.push({ ...m, key: c.key, label: c.label, weight: c.weight });
+    }
+    if (!parts.length) continue;
+    any = true;
+    const total = parts.reduce((s, p) => s + p.weight, 0);
+    const rates = parts.map((p) => Math.max(0, p.rate));
+    const central = parts.reduce((s, p, i) => s + rates[i] * p.weight / total, 0);
+    const now = cur.counts[slug];
+    out.parts[slug] = parts.map((p) => ({ ...p, share: p.weight / total }));
+    out.pacePerHour[slug] = central;
+    out.projected[slug] = Math.round(now + central * remainingHours);
+    out.low[slug] = Math.round(now + Math.min(...rates) * remainingHours);
+    out.high[slug] = Math.round(now + Math.max(...rates) * remainingHours);
+    const recent = parts.find((p) => p.key === 'recent');
+    const ref = parts.find((p) => p.key === 'day') || parts.find((p) => p.key === 'week');
+    let trend = 'steady';
+    if (recent && ref) {
+      const r = Math.max(0, recent.rate), b = Math.max(0, ref.rate);
+      if (r > b * 1.35 && r - b >= 0.5) trend = 'up';
+      else if (r < b * 0.65 && b - r >= 0.5) trend = 'down';
+    }
+    out.trend[slug] = trend;
+  }
+  return any ? out : null;
+}
+
 // ------------------------------------------------------------------ gaps
 
 /** Lead (+) or deficit (−) of `slug` against whoever holds position `pos` (1-based). */

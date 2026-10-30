@@ -1,0 +1,92 @@
+{
+ "description": "Each project's best completed day as observed at the time of an earlier check. These are not average daily rates and may since have been surpassed. Historical context only; not a complete daily series.",
+ "unit": "weighted votes, net change over one day",
+ "verified_against": "initialDay on the ballot page (same as `days` in /api/vote-stats): each project's best single day",
+ "verified_at": "2026-10-30T04:04:24Z",
+ "entries": [
+  {
+   "date": "2026-09-25",
+   "slug": "create-conference-council-d3bca3",
+   "project": "CREATE Conference Council",
+   "net_daily_gain": 184,
+   "status": "verified",
+   "note": "matches the source's current best day exactly",
+   "source_best_day_at_verification": {
+    "votes": 184,
+    "date": "2026-09-25"
+   }
+  },
+  {
+   "date": "2026-10-09",
+   "slug": "blankisyours-200345",
+   "project": "BlankIsYours",
+   "net_daily_gain": 109,
+   "status": "verified",
+   "note": "matches the source's current best day exactly",
+   "source_best_day_at_verification": {
+    "votes": 109,
+    "date": "2026-10-09"
+   }
+  },
+  {
+   "date": "2026-10-13",
+   "slug": "hack-the-rex-7615bd",
+   "project": "Hack The Rex",
+   "net_daily_gain": 123,
+   "status": "superseded",
+   "note": "the source now shows a better day: +278 on 2026-10-28",
+   "source_best_day_at_verification": {
+    "votes": 278,
+    "date": "2026-10-28"
+   }
+  },
+  {
+   "date": "2026-10-17",
+   "slug": "st-robert-catholic-high-school-hosa-f148cc",
+   "project": "St. Robert Catholic High School HOSA",
+   "net_daily_gain": 258,
+   "status": "verified",
+   "note": "matches the source's current best day exactly",
+   "source_best_day_at_verification": {
+    "votes": 258,
+    "date": "2026-10-17"
+   }
+  },
+  {
+   "date": "2026-10-19",
+   "slug": "support-team-faraday-an-ftc-robotics-team-710b11",
+   "project": "Support Team Faraday: An FTC Robotics Team",
+   "net_daily_gain": 113,
+   "status": "verified",
+   "note": "matches the source's current best day exactly",
+   "source_best_day_at_verification": {
+    "votes": 113,
+    "date": "2026-10-19"
+   }
+  },
+  {
+   "date": "2026-10-19",
+   "slug": "open-minds-foundation-3b1aae",
+   "project": "Open Minds Foundation",
+   "net_daily_gain": 123,
+   "status": "verified",
+   "note": "matches the source's current best day exactly",
+   "source_best_day_at_verification": {
+    "votes": 123,
+    "date": "2026-10-19"
+   }
+  },
+  {
+   "date": "2026-10-25",
+   "slug": "mac-design-cup-2026-8bb8ef",
+   "project": "Mac Design Cup 2026",
+   "net_daily_gain": 169,
+   "status": "verified",
+   "note": "matches the source's current best day exactly",
+   "source_best_day_at_verification": {
+    "votes": 169,
+    "date": "2026-10-25"
+   }
+  }
+ ]
+}

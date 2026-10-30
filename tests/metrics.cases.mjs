@@ -198,6 +198,44 @@ export const cases = [
     eq(M.paceSeriesFor(r, 'a').map((p) => p.y), [20, 4, 0]);
   }],
 
+  ['forecast blends recent, day and week paces with renormalised weights', () => {
+    // 4h of snapshots: no 24h/12h/6h window yet, so only recent (3h) + week are used.
+    const r = recs(
+      ['2026-10-30T10:00:00Z', '2026-10-30T10:00:00Z', { a: 100 }],
+      ['2026-10-30T11:00:00Z', '2026-10-30T11:00:00Z', { a: 106 }],
+      ['2026-10-30T14:00:00Z', '2026-10-30T14:00:00Z', { a: 124 }]);   // 3h: +18 = 6/h
+    const meta = { a: { source_week_votes: 336, source_week_votes_at: '2026-10-30T14:00:00Z', published_on: '2026-09-01' } }; // 2/h
+    const f = M.forecast(r, iso('2026-10-31T00:00:00Z'), meta);   // 10h left
+    eq(f.parts.a.map((p) => [p.key, Math.round(p.rate * 100) / 100]), [['recent', 6], ['week', 2]]);
+    const central = 6 * (0.25 / 0.65) + 2 * (0.40 / 0.65);
+    ok(Math.abs(f.pacePerHour.a - central) < 1e-9, 'central pace');
+    eq([f.low.a, f.high.a], [124 + 2 * 10, 124 + 6 * 10]);
+    eq(f.projected.a, Math.round(124 + central * 10));
+    eq(f.trend.a, 'up');
+  }],
+
+  ['week pace for a new project uses only the days it existed', () => {
+    const p = M.weekPace({ source_week_votes: 48, source_week_votes_at: '2026-10-30T16:00:00Z', published_on: '2026-10-29' });
+    // Published Oct 29 → since Toronto midnight (04:00Z) = 36h.
+    eq(p.hours, 36);
+    eq(p.rate, 48 / 36);
+    eq(M.weekPace({ source_week_votes: 5, source_week_votes_at: '2026-10-30T06:00:00Z', published_on: '2026-10-30' }), null);
+  }],
+
+  ['vote removals stay visible but never project a decline', () => {
+    const r = recs(
+      ['2026-10-30T11:00:00Z', '2026-10-30T11:00:00Z', { a: 100 }],
+      ['2026-10-30T14:00:00Z', '2026-10-30T14:00:00Z', { a: 94 }]);
+    const f = M.forecast(r, iso('2026-10-30T20:00:00Z'), {});
+    eq(f.parts.a[0].rate, -2);
+    eq([f.projected.a, f.low.a, f.high.a], [94, 94, 94]);
+  }],
+
+  ['forecast is null without any measurable pace', () => {
+    const r = recs(['2026-10-30T14:00:00Z', '2026-10-30T14:00:00Z', { a: 1 }]);
+    eq(M.forecast(r, iso('2026-10-31T00:00:00Z'), {}), null);
+  }],
+
   ['chart series follow observations only', () => {
     const r = recs(['2026-10-29T13:00:00Z', '2026-10-29T13:30:00Z', { a: 5 }],
       ['2026-10-29T14:00:00Z', '2026-10-29T14:00:00Z', { a: 9 }]);
