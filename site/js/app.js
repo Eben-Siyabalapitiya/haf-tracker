@@ -51,6 +51,8 @@ function ago(ms) {
   return `${dur(Date.now() - ms)} ago`;
 }
 const title = (slug) => state.projects[slug]?.title || slug;
+// Rank label with a star for the funded top 5.
+const place = (rank, hash = true) => (rank <= FUNDED ? `<span class="star" title="Top ${FUNDED}">★</span>` : '') + (hash ? '#' : '') + rank;
 const school = (slug) => state.projects[slug]?.school || '';
 
 // ------------------------------------------------------------------ data loading
@@ -557,12 +559,12 @@ function renderRace(d, sel, from, proj) {
     const moved = r.now - r.start;
     const s = pct(r.start), n = pct(r.now), f = r.fin != null ? pct(r.fin) : null;
     return `<div class="lane ${r.slug === HL ? 'rex' : ''}" style="--c:${r.color}">
-      <div class="lane-name"><span class="r">#${r.rank}</span><span class="nm">${esc(title(r.slug))}</span>
+      <div class="lane-name"><span class="r">${place(r.rank)}</span><span class="nm">${esc(title(r.slug))}</span>
         <span class="meta"><b class="${cls(moved)}">${signed(moved)}</b> since ${when(r.since)}${gap ? ' · ' + gap : ''}</span></div>
       <div class="track">
         ${ticks.map((t) => `<i class="grid" style="left:${pct(t)}%"></i>`).join('')}
         <i class="cut" style="left:${pct(cutoff)}%"></i>
-        <i class="trail" style="left:${s}%;width:${Math.max(0, n - s)}%"></i>
+        ${n >= s ? `<i class="trail" style="left:${s}%;width:${n - s}%"></i>` : `<i class="trail lost" style="left:${n}%;width:${s - n}%"></i>`}
         ${f != null && f > n ? `<i class="ghost" style="left:${n}%;width:${f - n}%"></i><i class="ghost-end" style="left:${f}%"></i><span class="fin" style="left:${f}%">~${fmt(r.fin)}</span>` : ''}
         <i class="dot" style="left:${n}%"></i>
         <span class="val" style="left:${n}%">${fmt(r.now)}</span>
@@ -595,7 +597,7 @@ function renderMomentum(d) {
   $('bars').innerHTML = top.map((r) => {
     const w = Math.max(0, r.ch.delta) / max * 100;
     const isNew = r.ch.status === 'new' ? ' <span class="badge">new</span>' : '';
-    return `<div class="bar ${r.slug === HL ? 'rex' : ''}"><span class="r">#${d.ranks[r.slug]}</span>
+    return `<div class="bar ${r.slug === HL ? 'rex' : ''}"><span class="r">${place(d.ranks[r.slug])}</span>
       <div class="track"><div class="fill" style="width:${w.toFixed(1)}%"></div><div class="name"><span>${esc(title(r.slug))}</span>${isNew}</div></div>
       <span class="n ${cls(r.ch.delta)}" data-tip="${esc(tipFor(r.ch, state.mom === 'today' ? 'Today' : win.label, win))}">${signed(r.ch.delta)}</span></div>`;
   }).join('') || '<div class="empty">No changes in this window.</div>';
@@ -641,6 +643,7 @@ function renderBoard(d) {
   $('thToday').dataset.tip = d.today.kind === 'midnight' || d.today.kind === 'none' ? 'Change since Toronto midnight.'
     : `* Today = ${esc(todayLabel(d))}. A full-day change needs a collection near Toronto midnight.`;
 
+  const removed = M.removedSince(d.records, d.cur.time - 24 * HOUR);
   const rows = d.order.map((slug) => {
     const r = { slug, rank: d.ranks[slug], title: title(slug), school: school(slug), votes: d.cur.counts[slug], ch: {} };
     for (const k of ['today', ...M.WINDOWS.map((w) => w.key)]) r.ch[k] = M.changeFor(d.records, slug, d.bases[k], d.cur);
@@ -679,8 +682,8 @@ function renderBoard(d) {
     const today = r.ch.today.status === 'none' ? '<span class="zero" data-tip="No collection yet today (Toronto time).">—</span>'
       : changeCell(r.ch.today, `Today (${todayLabel(d)})`, null);
     html.push(`<tr class="${r.slug === HL ? 'rex' : ''} ${isCut ? 'cut' : ''}">
-      <td class="num rank sticky-a">${r.rank}</td>
-      <td class="sticky-b namecell"><span class="pname">${esc(r.title)}${r.slug === HL ? '<span class="mark">★</span>' : ''}</span><span class="pschool">${esc(r.school)}</span></td>
+      <td class="num rank sticky-a">${place(r.rank, false)}</td>
+      <td class="sticky-b namecell"><span class="pname">${esc(r.title)}${removed[r.slug] ? `<span class="lost-tag" data-tip="Votes removed in the last 24h: ${fmt(removed[r.slug].removed)} across ${removed[r.slug].times} drop${removed[r.slug].times > 1 ? 's' : ''}. Net changes already include this.">−${fmt(removed[r.slug].removed)} removed</span>` : ''}</span><span class="pschool">${esc(r.school)}</span></td>
       <td class="num votes">${fmt(r.votes)}</td>
       <td class="num" data-label="${todayCol}">${today}</td>
       ${M.WINDOWS.map((w) => `<td class="num" data-label="${w.label}">${changeCell(r.ch[w.key], w.label, winOf(w.key))}</td>`).join('')}
@@ -711,7 +714,7 @@ function feedItem(e, fresh) {
   const name = esc(title(e.slug));
   const f = fresh ? ' fresh' : '';
   switch (e.kind) {
-    case 'gain': return `<li class="fitem ${rex}${f}"><span class="d up">${signed(e.delta)}</span><span class="t">${name} <span class="sub">· ${fmt(e.total)} · #${e.rank}</span></span></li>`;
+    case 'gain': return `<li class="fitem ${rex}${f}"><span class="d up">${signed(e.delta)}</span><span class="t">${name} <span class="sub">· ${fmt(e.total)} · ${place(e.rank)}</span></span></li>`;
     case 'decrease': return `<li class="fitem alert bad ${rex}${f}"><span class="d down">${signed(e.delta)}</span><span class="t">${name} <span class="sub">total went down to ${fmt(e.total)}</span></span></li>`;
     case 'rank': {
       const up = e.after < e.before;
@@ -777,7 +780,7 @@ function renderProjection(d) {
   const head = HL in p.projected ? `<div class="proj-head"><span class="label">Hack The Rex at close</span><b>#${pr[HL]} · ~${fmt(mine)}</b>
      ${g2 ? `<span class="${cls(g2.gap)}">${signed(g2.gap)}</span> vs ${esc(title(g2.other))} · pace ${p.pacePerHour[HL].toFixed(1)}/h` : ''}</div>` : '';
   el.innerHTML = head + `<div class="proj">${shown.map((s) => `<div class="prow ${s === HL ? 'rex' : ''} ${pr[s] > FUNDED ? 'out' : ''}">
-      <span class="r">${pr[s]}</span><span class="nm">${esc(title(s))}</span>
+      <span class="r">${place(pr[s], false)}</span><span class="nm">${esc(title(s))}</span>
       <span class="pv">~${fmt(p.projected[s])}<small>now ${fmt(d.cur.counts[s])} · ${p.pacePerHour[s].toFixed(1)}/h</small></span></div>`).join('')}</div>
     <p class="note" data-tip="Each project's pace over the last ${dur(p.spanMs)} (${when(p.from)} → ${when(p.to)}), extended ${dur(p.remainingHours * HOUR)} to the close. Voting comes in bursts, so treat this as a rough guide.">Straight-line estimate · rough guide</p>`;
 }
@@ -795,7 +798,7 @@ function notifyNew(prevLastT) {
     if (toasts.length >= 4) break;
     if (e.kind === 'cutoff') toasts.push({ cls: e.slug === HL ? 'rex' : '', label: 'Funding line', text: `${title(e.slug)} ${e.entered ? 'entered' : 'left'} the top ${FUNDED}` });
     else if (e.kind === 'rank' && (e.slug === HL || (e.passed || []).includes(HL))) toasts.push({ cls: 'rex', label: 'Position change', text: `${title(e.slug)} moved ${e.after < e.before ? 'up' : 'down'} to #${e.after}` });
-    else if (e.kind === 'decrease' && d.ranks[e.slug] <= 10) toasts.push({ cls: 'bad', label: 'Vote decrease', text: `${title(e.slug)} ${signed(e.delta)}` });
+    else if (e.kind === 'decrease' && (e.slug === HL || d.ranks[e.slug] <= 10)) toasts.push({ cls: 'bad', label: e.slug === HL ? 'Hack The Rex lost votes' : 'Votes removed', text: `${title(e.slug)} ${signed(e.delta)} · now ${fmt(e.total)}` });
     else if (e.kind === 'new') toasts.push({ cls: '', label: 'New project', text: title(e.slug) });
   }
   if (!toasts.length) {

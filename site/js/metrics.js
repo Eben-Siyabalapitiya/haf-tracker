@@ -282,6 +282,26 @@ export function buildEvents(records, { rankDepth = 10, cutoff = 5 } = {}) {
   return events.sort((a, b) => b.at - a.at);
 }
 
+/**
+ * Votes removed per project since `since`: the sum of every drop between consecutive
+ * collections (gains in between don't cancel them out). {slug: {removed, times}}
+ */
+export function removedSince(records, since = -Infinity) {
+  const out = {};
+  for (let i = 1; i < records.length; i++) {
+    if (records[i].t < since) continue;
+    const prev = records[i - 1].c, next = records[i].c;
+    for (const slug of Object.keys(next)) {
+      if (slug in prev && next[slug] < prev[slug]) {
+        const o = out[slug] || (out[slug] = { removed: 0, times: 0 });
+        o.removed += prev[slug] - next[slug];
+        o.times += 1;
+      }
+    }
+  }
+  return out;
+}
+
 // ------------------------------------------------------------------ projections
 
 /**
