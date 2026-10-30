@@ -47,7 +47,7 @@ MIN_KEEP_RATIO = 0.5        # reject if more than half of the known projects van
 MAX_UNTITLED_RATIO = 0.25   # reject if too many counts have no readable name
 
 # Storage behaviour.
-HEARTBEAT = timedelta(minutes=15)          # re-confirm unchanged totals this often
+HEARTBEAT = timedelta(minutes=5)           # re-confirm unchanged totals this often
 ERROR_HEARTBEAT = timedelta(minutes=60)    # re-record an ongoing failure this often
 
 

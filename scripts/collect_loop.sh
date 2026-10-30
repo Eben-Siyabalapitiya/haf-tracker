@@ -4,8 +4,8 @@
 # runner resets to the remote branch and collects again on top of it, so history is never lost.
 set -uo pipefail
 
-MINUTES=${MINUTES:-13}
-INTERVAL=${INTERVAL:-180}
+MINUTES=${MINUTES:-28}
+INTERVAL=${INTERVAL:-60}
 BRANCH=${BRANCH:-main}
 STRICT=${STRICT:-}
 end=$(( $(date +%s) + MINUTES * 60 ))

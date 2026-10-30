@@ -160,7 +160,7 @@ class StorageTests(unittest.TestCase):
     def test_unchanged_totals_do_not_write_until_heartbeat(self):
         self.assertEqual(self.store.record_success(self.result(), T0), "appended")
         mtime = os.path.getmtime(self.store.snapshots)
-        self.assertEqual(self.store.record_success(self.result(), T0 + timedelta(minutes=5)), "unchanged")
+        self.assertEqual(self.store.record_success(self.result(), T0 + timedelta(minutes=2)), "unchanged")
         self.assertEqual(os.path.getmtime(self.store.snapshots), mtime)
         self.assertEqual(self.store.record_success(self.result(), T0 + timedelta(minutes=20)), "extended")
         lines = self.lines()
