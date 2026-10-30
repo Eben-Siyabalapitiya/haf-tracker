@@ -218,6 +218,27 @@ export function rankSeriesFor(records, slug, from = -Infinity) {
   return pts;
 }
 
+/**
+ * Votes per hour over time: at each observation, the change since the observation about
+ * `windowMs` earlier (within ±half the window), divided by the real elapsed time.
+ * Rises and falls with activity; never interpolated.
+ */
+export function paceSeriesFor(records, slug, from = -Infinity, windowMs = 30 * MIN) {
+  const obs = observations(records).filter((o) => slug in o.counts);
+  const pts = [];
+  let j = 0;
+  for (let i = 0; i < obs.length; i++) {
+    const o = obs[i];
+    if (o.time < from) continue;
+    const target = o.time - windowMs;
+    while (j + 1 < i && Math.abs(obs[j + 1].time - target) <= Math.abs(obs[j].time - target)) j++;
+    const b = obs[j];
+    if (!b || b.time >= o.time || Math.abs(b.time - target) > windowMs / 2) continue;
+    pts.push({ x: o.time, y: (o.counts[slug] - b.counts[slug]) / ((o.time - b.time) / HOUR) });
+  }
+  return pts;
+}
+
 /** Net gain since the first observation of the range (or since first seen, if later). */
 export function gainSeriesFor(records, slug, from = -Infinity) {
   const s = seriesFor(records, slug, from);

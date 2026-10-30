@@ -178,6 +178,15 @@ export const cases = [
     eq(p.projected.b, 90);            // decreases never project downward
   }],
 
+  ['pace rises and falls with observed gains per hour', () => {
+    const r = recs(
+      ['2026-10-29T13:00:00Z', '2026-10-29T13:00:00Z', { a: 100 }],
+      ['2026-10-29T13:30:00Z', '2026-10-29T13:30:00Z', { a: 110 }],   // +10 in 30m = 20/h
+      ['2026-10-29T14:00:00Z', '2026-10-29T14:00:00Z', { a: 112 }],   // +2 in 30m = 4/h
+      ['2026-10-29T14:20:00Z', '2026-10-29T14:20:00Z', { a: 112 }]);  // nothing 30m ±15m back of 14:20 except 14:00 (20m)
+    eq(M.paceSeriesFor(r, 'a').map((p) => p.y), [20, 4, 0]);
+  }],
+
   ['chart series follow observations only', () => {
     const r = recs(['2026-10-29T13:00:00Z', '2026-10-29T13:30:00Z', { a: 5 }],
       ['2026-10-29T14:00:00Z', '2026-10-29T14:00:00Z', { a: 9 }]);

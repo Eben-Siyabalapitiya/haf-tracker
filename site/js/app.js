@@ -25,7 +25,7 @@ const state = {
   lastPoll: 0, pollError: null, loading: false, firstLoad: true,
   chart: store.get('chart', 'totals'), range: store.get('range', 0), mom: store.get('mom', '5h'),
   feed: store.get('feed', 'all'), limit: store.get('limit', 0), rankPeriod: store.get('rankPeriod', '24h'),
-  selected: store.get('selected', null), sort: { key: 'rank', dir: 1 }, search: '', showProj: store.get('showProj', true),
+  selected: store.get('selected', null), show: store.get('show', 'rivals'), sort: { key: 'rank', dir: 1 }, search: '', showProj: store.get('showProj', true),
 };
 
 // ------------------------------------------------------------------ formatting
@@ -178,10 +178,21 @@ function selection(d) {
     const sel = state.selected.filter((s) => s in d.cur.counts);
     if (sel.length) return sel;
   }
+  if (state.show === 'top10') return d.order.slice(0, 10);
+  if (state.show === 'movers') return movers(d);
   return closestRivals(d);
 }
 
-function closestRivals(d, n = 6) {
+/** Hack The Rex plus whoever gained the most recently (last 5h, or all history if shorter). */
+function movers(d, n = 5) {
+  const base = d.bases['5h'] || { time: d.first, counts: d.records[0].c };
+  const gains = d.order.map((slug) => ({ slug, ch: M.changeFor(d.records, slug, base, d.cur) }))
+    .filter((r) => r.slug !== HL && (r.ch.status === 'ok' || r.ch.status === 'new'))
+    .sort((x, y) => y.ch.delta - x.ch.delta || d.ranks[x.slug] - d.ranks[y.slug]);
+  return [HL, ...gains.slice(0, n).map((r) => r.slug)].filter((s) => s in d.cur.counts);
+}
+
+function closestRivals(d, n = 4) {
   const i = d.order.indexOf(HL);
   if (i < 0) return d.order.slice(0, 5);
   const picks = [HL];
@@ -284,7 +295,6 @@ function renderHero(d) {
   const counts = d.cur.counts;
   const inBallot = HL in counts;
   $('heroTitle').textContent = title(HL) || 'Hack The Rex';
-  if (school(HL)) $('heroLede').textContent = `${school(HL)} · ${fmt(Object.keys(counts).length)} projects on the ballot · top ${FUNDED} get funded`;
   if (!inBallot) { $('stats').innerHTML = '<div class="stat" style="grid-column:1/-1"><div class="s">Hack The Rex is not on the current ballot.</div></div>'; return; }
   const rank = d.ranks[HL];
   const stat = (label, v, s, extra = '') => `<div class="stat ${extra}"><p class="label">${label}</p><div class="v">${v}</div><div class="s">${s}</div></div>`;
@@ -321,6 +331,8 @@ function renderHero(d) {
 // ---------------------------------------------------------------- chart
 
 let chart = null;
+const isPhone = () => window.matchMedia('(max-width: 720px)').matches;
+
 // Draws "now" and "close" guides on the chart.
 const markers = {
   id: 'markers', now: null, close: null,
@@ -333,49 +345,117 @@ const markers = {
       ctx.strokeStyle = color; ctx.setLineDash([3, 4]); ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(px, a.top); ctx.lineTo(px, a.bottom); ctx.stroke();
       ctx.setLineDash([]); ctx.fillStyle = color; ctx.font = '500 10px "IBM Plex Mono", monospace';
-      const right = px > a.right - 50;
-      ctx.textAlign = right ? 'right' : 'left';
-      ctx.fillText(text, px + (right ? -5 : 5), a.top + 10);
+      ctx.textAlign = 'right';
+      ctx.fillText(text, px - 5, a.top + 10);
       ctx.restore();
     };
     line(markers.now, 'NOW', 'rgba(239,235,228,0.5)');
     line(markers.close, 'CLOSE', 'rgba(240,123,63,0.85)');
   },
 };
+
+// Name + value at the end of each line, nudged apart so they never overlap.
+const endLabels = {
+  id: 'endLabels',
+  afterDatasetsDraw(c) {
+    const { ctx, chartArea: a } = c;
+    const items = [];
+    c.data.datasets.forEach((ds, i) => {
+      if (!ds.endLabel) return;
+      const meta = c.getDatasetMeta(i);
+      const pt = meta.data[meta.data.length - 1];
+      if (!pt || meta.hidden) return;
+      items.push({ x: pt.x, y: pt.y, text: ds.endLabel, color: ds.labelColor, bold: ds.slug === HL });
+    });
+    items.sort((p, q) => p.y - q.y);
+    for (let i = 1; i < items.length; i++) items[i].y = Math.max(items[i].y, items[i - 1].y + 14);
+    const overflow = items.length ? items[items.length - 1].y - a.bottom : 0;
+    if (overflow > 0) for (const it of items) it.y -= overflow;
+    ctx.save();
+    ctx.textBaseline = 'middle';
+    for (const it of items) {
+      ctx.font = `${it.bold ? 600 : 500} 11px "IBM Plex Sans", sans-serif`;
+      ctx.fillStyle = it.color;
+      ctx.fillText(it.text, Math.min(it.x + 8, a.right + 8), it.y);
+    }
+    ctx.restore();
+  },
+};
+
+function shortName(slug) {
+  const t = title(slug);
+  const max = isPhone() ? 10 : 18;
+  return t.length > max ? t.slice(0, max - 1).trimEnd() + '…' : t;
+}
+
+function glow(c, color) {
+  const { ctx, chartArea } = c.chart;
+  if (!chartArea) return color + '22';
+  const g = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+  g.addColorStop(0, color + '40');
+  g.addColorStop(1, color + '00');
+  return g;
+}
+
 function renderChart(d) {
+  if (state.chart === 'gain') state.chart = 'totals';
   for (const b of $('chartTabs').children) b.setAttribute('aria-selected', String(b.dataset.chart === state.chart));
   for (const b of $('rangeSeg').children) b.setAttribute('aria-pressed', String(Number(b.dataset.range) === state.range));
   const sel = selection(d);
   $('chips').innerHTML = sel.map((s) => `<span class="chip"><i style="background:${colorFor(s, sel)}"></i><span>${esc(title(s))}</span><button type="button" data-unselect="${esc(s)}" aria-label="Remove ${esc(title(s))}">×</button></span>`).join('');
-  if (!window.Chart) { setTimeout(() => renderChart(derive()), 250); return; }
+  const custom = Array.isArray(state.selected);
+  for (const b of $('showSeg').children) b.setAttribute('aria-pressed', String(!custom && b.dataset.show === state.show));
+  const canProject = Date.now() < CLOSE && !!M.project(d.records, CLOSE);
+  const sw = $('projToggle');
+  sw.setAttribute('aria-checked', String(state.showProj && canProject));
+  sw.classList.toggle('waiting', !canProject);
+  sw.querySelector('span').textContent = canProject || Date.now() >= CLOSE ? 'Predictions' : 'Predictions · after 1h of data';
 
   const from = state.range ? d.cur.time - state.range * HOUR : -Infinity;
-  const fn = state.chart === 'rank' ? M.rankSeriesFor : state.chart === 'gain' ? M.gainSeriesFor : M.seriesFor;
-  const datasets = sel.map((slug) => {
-    const data = fn(d.records, slug, from);
-    const color = colorFor(slug, sel);
-    return {
-      label: title(slug), slug, data, borderColor: color, backgroundColor: color,
-      borderWidth: slug === HL ? 3.2 : 2, pointRadius: data.length < 40 ? 2.5 : 0, pointHoverRadius: 5,
-      tension: 0, order: slug === HL ? 0 : 1,
-    };
-  });
-  // Faded dashed line from each project's latest total to its straight-line projection at the close.
   const proj = state.showProj && Date.now() < CLOSE ? M.project(d.records, CLOSE) : null;
+  const projNote = proj ? ` Faded dashed lines continue each project's pace over the last ${dur(proj.spanMs)} to the close. A rough guide, not a forecast.`
+    : state.showProj && Date.now() < CLOSE ? ' Prediction lines appear after 1 hour of collections.' : '';
+
+  const race = state.chart === 'race';
+  $('race').hidden = !race;
+  document.querySelector('.chart-box').hidden = race;
+  if (race) {
+    renderRace(d, sel, from, proj);
+    return;
+  }
+  if (!window.Chart) { setTimeout(() => renderChart(derive()), 250); return; }
+
+  const kind = state.chart;
+  const isRank = kind === 'rank';
+  const fn = isRank ? M.rankSeriesFor : kind === 'pace' ? (r, slug, f) => M.paceSeriesFor(r, slug, f, HOUR) : M.seriesFor;
   const projRanks = proj ? M.rankMap(proj.projected) : null;
-  if (proj) {
-    for (const ds of [...datasets]) {
-      if (!ds.data.length || !(ds.slug in proj.projected)) continue;
-      const last = ds.data[ds.data.length - 1];
-      const end = state.chart === 'rank' ? projRanks[ds.slug]
-        : state.chart === 'gain' ? last.y + proj.projected[ds.slug] - d.cur.counts[ds.slug]
-        : proj.projected[ds.slug];
+  const fmtVal = (v, p) => (isRank ? '#' + v : kind === 'pace' ? `${v.toFixed(1)}/h` : (p ? '~' : '') + fmt(Math.round(v)));
+  const datasets = [];
+  for (const slug of sel) {
+    const data = fn(d.records, slug, from);
+    if (!data.length) continue;
+    const color = colorFor(slug, sel);
+    const last = data[data.length - 1];
+    const main = {
+      label: title(slug), slug, data, borderColor: color, labelColor: color,
+      borderWidth: slug === HL ? 3.2 : 2, tension: isRank ? 0.45 : 0.35, cubicInterpolationMode: isRank ? 'default' : 'monotone',
+      pointRadius: (ctx) => (ctx.dataIndex === ctx.dataset.data.length - 1 ? 4 : 0),
+      pointBackgroundColor: color, pointHoverRadius: 5, order: slug === HL ? 0 : 1,
+      fill: slug === HL && !isRank ? 'start' : false,
+      backgroundColor: slug === HL && !isRank ? (c) => glow(c, color) : color,
+      endLabel: `${shortName(slug)}  ${fmtVal(last.y)}`,
+    };
+    datasets.push(main);
+    if (proj && slug in proj.projected) {
+      const end = isRank ? projRanks[slug] : kind === 'pace' ? proj.pacePerHour[slug] : proj.projected[slug];
+      main.endLabel = null;
       datasets.push({
-        label: `${ds.label} (projected)`, slug: ds.slug, projection: true,
+        label: `${title(slug)} (predicted)`, slug, projection: true, labelColor: color,
         data: [{ x: last.x, y: last.y }, { x: CLOSE, y: end }],
-        borderColor: ds.borderColor + '70', backgroundColor: ds.borderColor + '70',
-        borderDash: [6, 6], borderWidth: Math.max(1.4, ds.borderWidth - 0.6), pointRadius: [0, 3.5], pointHoverRadius: 5,
-        tension: 0, order: 2,
+        borderColor: color + '66', borderDash: [5, 6], borderWidth: Math.max(1.4, main.borderWidth - 0.8),
+        pointRadius: [0, 4], pointBackgroundColor: '#151311', pointBorderColor: color + 'aa', pointBorderWidth: 1.5,
+        pointHoverRadius: 5, tension: 0, order: 2, fill: false,
+        endLabel: `${shortName(slug)}  ${fmtVal(end, true)}`,
       });
     }
   }
@@ -383,16 +463,19 @@ function renderChart(d) {
   const empty = $('chartEmpty');
   if (points < 2) {
     empty.hidden = false;
-    empty.innerHTML = `<div><strong>Collecting history</strong>One snapshot so far (${when(d.cur.time)}). Lines appear as soon as the votes change.</div>`;
+    empty.innerHTML = kind === 'pace'
+      ? '<div><strong>Collecting history</strong>Pace needs about an hour of collections to compare against.</div>'
+      : `<div><strong>Collecting history</strong>One snapshot so far (${when(d.cur.time)}). Lines appear as soon as the votes change.</div>`;
   } else empty.hidden = true;
 
-  const isRank = state.chart === 'rank';
   const maxRank = Math.max(2, ...datasets.flatMap((x) => x.data.map((p) => p.y)));
   const x0 = Number.isFinite(from) ? Math.max(from, d.first) : d.first;
   const xMax = proj ? CLOSE : d.cur.time;
   const longRange = xMax - x0 > 20 * HOUR;
+  const tickFont = { family: 'IBM Plex Mono', size: 10.5 };
   const options = {
-    responsive: true, maintainAspectRatio: false, animation: { duration: 250 },
+    responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+    layout: { padding: { right: isPhone() ? 92 : 150, top: 8, left: 4 } },
     interaction: { mode: 'nearest', axis: 'x', intersect: false },
     plugins: {
       legend: { display: false },
@@ -401,51 +484,94 @@ function renderChart(d) {
         titleFont: { family: 'IBM Plex Mono', size: 11 }, bodyFont: { family: 'IBM Plex Sans', size: 12.5 },
         itemSort: (a, b) => (isRank ? a.parsed.y - b.parsed.y : b.parsed.y - a.parsed.y),
         callbacks: {
-          title: (items) => items.length ? dtFmt.format(items[0].parsed.x) : '',
-          label: (it) => ` ${it.dataset.label}: ${isRank ? '#' + it.parsed.y : state.chart === 'gain' ? signed(Math.round(it.parsed.y)) : (it.dataset.projection ? '~' : '') + fmt(Math.round(it.parsed.y))}`,
+          title: (items) => (items.length ? dtFmt.format(items[0].parsed.x) : ''),
+          label: (it) => ` ${it.dataset.label}: ${fmtVal(it.parsed.y, it.dataset.projection)}`,
         },
       },
     },
     scales: {
       x: {
         type: 'linear', min: x0, max: xMax,
-        grid: { color: 'rgba(239,235,228,0.05)' }, border: { color: 'rgba(239,235,228,0.1)' },
-        ticks: { color: '#75716b', font: { family: 'IBM Plex Mono', size: 10.5 }, maxTicksLimit: 7, maxRotation: 0,
+        grid: { color: 'rgba(239,235,228,0.04)' }, border: { color: 'rgba(239,235,228,0.1)' },
+        ticks: { color: '#75716b', font: tickFont, maxTicksLimit: isPhone() ? 4 : 7, maxRotation: 0,
           callback: (v) => (longRange ? dtFmt.format(v).replace(/:\d\d /, ' ') : timeFmt.format(v)) },
       },
       y: {
-        reverse: isRank, grid: { color: 'rgba(239,235,228,0.05)' }, border: { display: false },
-        ticks: { color: '#75716b', font: { family: 'IBM Plex Mono', size: 10.5 }, precision: 0,
-          ...(isRank ? { stepSize: 1 } : {}),
-          callback: (v) => (isRank ? '#' + v : state.chart === 'gain' ? signed(v) : fmt(v)) },
+        reverse: isRank, grace: isRank ? 0 : '6%', grid: { color: 'rgba(239,235,228,0.05)' }, border: { display: false },
+        ticks: { color: '#75716b', font: tickFont, precision: isRank ? 0 : undefined,
+          callback: (v) => (isRank ? '#' + v : kind === 'pace' ? `${v}/h` : fmt(v)) },
         ...(isRank ? {
           min: 0.6, max: maxRank + 0.4,
           afterBuildTicks: (axis) => { axis.ticks = Array.from({ length: maxRank }, (_, i) => ({ value: i + 1 })); },
-        } : {}),
+        } : kind === 'pace' ? { beginAtZero: true } : {}),
       },
     },
   };
+  markers.now = d.cur.time;
+  markers.close = proj ? CLOSE : null;
   if (!chart) {
     Chart.defaults.font.family = 'IBM Plex Sans';
     Chart.defaults.color = '#a39e96';
-    chart = new Chart($('chart'), { type: 'line', data: { datasets }, options, plugins: [markers] });
+    chart = new Chart($('chart'), { type: 'line', data: { datasets }, options, plugins: [markers, endLabels] });
   } else {
     chart.data.datasets = datasets;
     chart.options = options;
     chart.update();
   }
-  markers.now = d.cur.time;
-  markers.close = proj ? CLOSE : null;
-  $('projToggle').textContent = state.showProj ? 'Projection on' : 'Projection off';
-  $('projToggle').setAttribute('aria-pressed', String(state.showProj));
   const notes = {
-    totals: 'Solid lines are weighted vote totals at each collection. The source does not say exactly when individual votes arrived.',
-    gain: 'Net change since the start of the selected range (or since a project was first seen, if later).',
+    totals: 'Weighted vote totals at each collection. The source does not say exactly when individual votes arrived.',
+    pace: 'Votes per hour, measured over the previous hour at each collection. It rises and falls as voting speeds up or slows down.',
     rank: 'Ballot position at each collection. Lines crossing means one project overtook another.',
   };
-  const projNote = proj ? ` Faded dashed lines extend each project's pace over the last ${dur(proj.spanMs)} to the close. A rough guide, not a forecast.`
-    : state.showProj && Date.now() < CLOSE ? ' Projection lines appear after 1 hour of collections.' : '';
-  $('chartNote').textContent = notes[state.chart] + projNote;
+  sw.dataset.tip = projNote.trim() || "Dashed lines continue each project's recent pace to the close.";
+  $('chartTabs').dataset.tip = notes[kind];
+}
+
+function niceStep(raw) {
+  const p = 10 ** Math.floor(Math.log10(raw || 1));
+  return [1, 2, 2.5, 5, 10].map((m) => m * p).find((s) => s >= raw) || 10 * p;
+}
+
+function renderRace(d, sel, from, proj) {
+  const rows = sel.filter((s) => s in d.cur.counts).map((slug) => {
+    const series = M.seriesFor(d.records, slug, from);
+    return {
+      slug, color: colorFor(slug, sel), rank: d.ranks[slug], now: d.cur.counts[slug],
+      start: series.length ? series[0].y : d.cur.counts[slug], since: series.length ? series[0].x : d.cur.time,
+      fin: proj ? proj.projected[slug] : null,
+    };
+  }).sort((a, b) => b.now - a.now);
+  if (!rows.length) { $('race').innerHTML = '<div class="empty">Pick a project from the leaderboard to add it here.</div>'; return; }
+  const cutoff = d.cur.counts[d.order[FUNDED - 1]];
+  const lo = Math.min(cutoff, ...rows.map((r) => r.start));
+  const hi = Math.max(cutoff, ...rows.map((r) => r.fin ?? r.now));
+  const step = niceStep((hi - lo) / 5 || 10);
+  const min = Math.max(0, Math.floor((lo - step * 0.4) / step) * step);
+  const max = Math.ceil((hi + step * 0.3) / step) * step;
+  const pct = (v) => Math.max(0, Math.min(100, ((v - min) / (max - min)) * 100));
+  const ticks = [];
+  for (let v = min; v <= max + 1e-9; v += step) ticks.push(v);
+  const lanes = rows.map((r, i) => {
+    const next = rows[i + 1];
+    const gap = next ? `${fmt(r.now - next.now)} ahead of next` : '';
+    const moved = r.now - r.start;
+    const s = pct(r.start), n = pct(r.now), f = r.fin != null ? pct(r.fin) : null;
+    return `<div class="lane ${r.slug === HL ? 'rex' : ''}" style="--c:${r.color}">
+      <div class="lane-name"><span class="r">#${r.rank}</span><span class="nm">${esc(title(r.slug))}</span>
+        <span class="meta"><b class="${cls(moved)}">${signed(moved)}</b> since ${when(r.since)}${gap ? ' · ' + gap : ''}</span></div>
+      <div class="track">
+        ${ticks.map((t) => `<i class="grid" style="left:${pct(t)}%"></i>`).join('')}
+        <i class="cut" style="left:${pct(cutoff)}%"></i>
+        <i class="trail" style="left:${s}%;width:${Math.max(0, n - s)}%"></i>
+        ${f != null && f > n ? `<i class="ghost" style="left:${n}%;width:${f - n}%"></i><i class="ghost-end" style="left:${f}%"></i><span class="fin" style="left:${f}%">~${fmt(r.fin)}</span>` : ''}
+        <i class="dot" style="left:${n}%"></i>
+        <span class="val" style="left:${n}%">${fmt(r.now)}</span>
+      </div>
+    </div>`;
+  }).join('');
+  $('race').innerHTML = `${lanes}
+    <div class="lane axis"><div></div><div class="track">${ticks.map((t) => `<span style="left:${pct(t)}%">${fmt(t)}</span>`).join('')}
+      <span class="cut-label" style="left:${pct(cutoff)}%">top-${FUNDED} line · ${fmt(cutoff)}</span></div></div>`;
 }
 
 // ---------------------------------------------------------------- momentum
@@ -457,7 +583,6 @@ function renderMomentum(d) {
   if (!base) {
     const need = win ? `a collection about ${win.label} ago (±${dur(win.tol)})` : 'a collection today';
     $('bars').innerHTML = `<div class="empty"><strong>Collecting history.</strong> This view needs ${need}. Tracking began ${when(d.first)}.</div>`;
-    $('momNote').textContent = '';
     return;
   }
   const rows = d.order.map((slug) => ({ slug, ch: M.changeFor(d.records, slug, base, d.cur) }))
@@ -475,7 +600,7 @@ function renderMomentum(d) {
       <span class="n ${cls(r.ch.delta)}" data-tip="${esc(tipFor(r.ch, state.mom === 'today' ? 'Today' : win.label, win))}">${signed(r.ch.delta)}</span></div>`;
   }).join('') || '<div class="empty">No changes in this window.</div>';
   const label = state.mom === 'today' ? `Today (${todayLabel(d)})` : `Last ${win.label}`;
-  $('momNote').textContent = `${label}: ${when(base.time)} → ${when(d.cur.time)} (${dur(d.cur.time - base.time)}). Net change in weighted votes.`;
+  $('momTitle').dataset.tip = `${label}: ${when(base.time)} → ${when(d.cur.time)} (${dur(d.cur.time - base.time)}). Net change in weighted votes.`;
 }
 
 // ---------------------------------------------------------------- leaderboard
@@ -513,7 +638,7 @@ function renderBoard(d) {
   const todayCol = d.today.kind === 'midnight' ? 'Today' : d.today.kind === 'none' ? 'Today' : 'Today*';
   $('thToday').textContent = todayCol;
   $('thRank').textContent = `Rank Δ ${state.rankPeriod}`;
-  $('todayNote').innerHTML = d.today.kind === 'midnight' || d.today.kind === 'none' ? ''
+  $('thToday').dataset.tip = d.today.kind === 'midnight' || d.today.kind === 'none' ? 'Change since Toronto midnight.'
     : `* Today = ${esc(todayLabel(d))}. A full-day change needs a collection near Toronto midnight.`;
 
   const rows = d.order.map((slug) => {
@@ -654,7 +779,7 @@ function renderProjection(d) {
   el.innerHTML = head + `<div class="proj">${shown.map((s) => `<div class="prow ${s === HL ? 'rex' : ''} ${pr[s] > FUNDED ? 'out' : ''}">
       <span class="r">${pr[s]}</span><span class="nm">${esc(title(s))}</span>
       <span class="pv">~${fmt(p.projected[s])}<small>now ${fmt(d.cur.counts[s])} · ${p.pacePerHour[s].toFixed(1)}/h</small></span></div>`).join('')}</div>
-    <p class="note">Straight line from each project's pace over the last ${dur(p.spanMs)} (${when(p.from)} → ${when(p.to)}), extended ${dur(p.remainingHours * HOUR)} to the close. Voting comes in bursts, so this is a rough guide, not a prediction of how people will vote.</p>`;
+    <p class="note" data-tip="Each project's pace over the last ${dur(p.spanMs)} (${when(p.from)} → ${when(p.to)}), extended ${dur(p.remainingHours * HOUR)} to the close. Voting comes in bursts, so treat this as a rough guide.">Straight-line estimate · rough guide</p>`;
 }
 
 // ---------------------------------------------------------------- notifications
@@ -701,9 +826,16 @@ function bind() {
   $('limitSeg').addEventListener('click', (e) => { const b = e.target.closest('[data-limit]'); if (b) setPref('limit', Number(b.dataset.limit)); });
   $('rankPeriod').addEventListener('change', (e) => setPref('rankPeriod', e.target.value));
   $('search').addEventListener('input', (e) => { state.search = e.target.value; const d = derive(); if (d) renderBoard(d); });
-  $('resetSel').addEventListener('click', () => setPref('selected', null));
-  $('projToggle').addEventListener('click', () => setPref('showProj', !state.showProj));
-  $('top5Sel').addEventListener('click', () => { const d = derive(); if (d) setPref('selected', d.order.slice(0, FUNDED + 1)); });
+  $('showSeg').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-show]'); if (!b) return;
+    state.selected = null; store.set('selected', null);
+    setPref('show', b.dataset.show);
+  });
+  $('projToggle').addEventListener('click', () => {
+    const d = derive();
+    if (d && !M.project(d.records, CLOSE)) { toast({ cls: '', label: 'Predictions', text: 'Predictions start once there is an hour of vote history.' }); return; }
+    setPref('showProj', !state.showProj);
+  });
   document.addEventListener('click', (e) => {
     const t = e.target.closest('[data-toggle],[data-unselect]');
     if (!t) return;
@@ -754,7 +886,8 @@ function tick() {
 bind();
 poll();
 // Re-measure chart labels once the web fonts have loaded.
-document.fonts?.ready.then(() => { if (chart) chart.update('none'); });
+Promise.all(['500 11px "IBM Plex Sans"', '600 11px "IBM Plex Sans"', '400 10.5px "IBM Plex Mono"'].map((f) => document.fonts?.load(f)))
+  .then(() => { if (chart) chart.update('none'); }).catch(() => {});
 setInterval(tick, 1000);
 setInterval(() => renderStatus(derive()), 30e3);
 tick();
