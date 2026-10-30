@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hack The Rex · Vote Tracker</title>
+  <meta name="description" content="Leaderboard and vote momentum for the TKS High Agency Fund ballot, tracking Hack The Rex.">
+  <meta name="theme-color" content="#0b0a09">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0a09'/%3E%3Cpath d='M8 23 L14 15 L18 19 L24 9' stroke='%23e8762c' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#board">Skip to leaderboard</a>
+
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <div class="brand"><svg class="brand-mark" viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#1c1a17"/><path d="M7 22 L13 15 L18 19 L25 9" stroke="#ffd23f" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="brand-name">Rex Tracker</span></div>
+      <div class="topbar-actions">
+        <span class="pill" id="statusPill" data-state="loading"><span class="dot"></span><span id="statusText">Loading</span></span>
+        <button class="btn" id="refreshBtn" type="button" aria-label="Refresh data now">
+          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Refresh</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <div class="hero-top">
+        <div>
+          <p class="label">TKS High Agency Fund · live vote tracker</p>
+          <h1 class="title" id="heroTitle">Hack The Rex</h1>
+          <p class="lede" id="heroLede">North Albion Collegiate Institute · Toronto</p>
+        </div>
+        <div class="countdown"><span class="label">Voting closes in</span><span id="countdown">—</span></div>
+      </div>
+      <div class="stats" id="stats" aria-live="polite"></div>
+      <div class="banner" id="banner" hidden></div>
+    </section>
+
+    <div class="layout">
+      <div class="col-main">
+        <section class="card" aria-labelledby="chartsTitle">
+          <div class="card-head">
+            <div>
+              <p class="label">Who is moving where</p>
+              <h2 id="chartsTitle">The race</h2>
+            </div>
+            <div class="seg" role="tablist" id="chartTabs">
+              <button role="tab" data-chart="totals" aria-selected="true">Totals</button>
+              <button role="tab" data-chart="gain">Net gain</button>
+              <button role="tab" data-chart="rank">Rank</button>
+            </div>
+          </div>
+          <div class="chart-controls">
+            <div class="seg small" id="rangeSeg" aria-label="Time range">
+              <button data-range="6">6H</button><button data-range="24">24H</button><button data-range="72">3D</button><button data-range="0" aria-pressed="true">All</button>
+            </div>
+            <div class="chips" id="chips"></div>
+            <div class="chip-tools">
+              <button class="link" id="projToggle" type="button" aria-pressed="true">Projection on</button>
+              <button class="link" id="resetSel" type="button">Closest rivals</button>
+              <button class="link" id="top5Sel" type="button">Top 5</button>
+            </div>
+          </div>
+          <div class="chart-box"><canvas id="chart" aria-label="Vote history chart" role="img"></canvas><div class="chart-empty" id="chartEmpty" hidden></div></div>
+          <p class="note" id="chartNote"></p>
+        </section>
+
+        <section class="card" aria-labelledby="momTitle">
+          <div class="card-head">
+            <div>
+              <p class="label">Momentum</p>
+              <h2 id="momTitle">Biggest net gains</h2>
+            </div>
+            <div class="seg small" id="momSeg">
+              <button data-mom="1h">1H</button><button data-mom="5h" aria-pressed="true">5H</button><button data-mom="24h">24H</button><button data-mom="today">Today</button>
+            </div>
+          </div>
+          <div class="bars" id="bars"></div>
+          <p class="note" id="momNote"></p>
+        </section>
+
+        <section class="card" id="board" aria-labelledby="boardTitle">
+          <div class="card-head">
+            <div>
+              <p class="label">Every project</p>
+              <h2 id="boardTitle">Leaderboard</h2>
+            </div>
+            <div class="board-tools">
+              <label class="search"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><input id="search" type="search" placeholder="Search projects or schools" autocomplete="off"></label>
+              <div class="seg small" id="limitSeg"><button data-limit="5">Top 5</button><button data-limit="10">Top 10</button><button data-limit="0" aria-pressed="true">All</button></div>
+              <label class="select"><span class="label">Rank Δ over</span>
+                <select id="rankPeriod"><option value="today">Today</option><option value="1h">1h</option><option value="5h">5h</option><option value="10h">10h</option><option value="24h" selected>24h</option></select>
+              </label>
+            </div>
+          </div>
+          <p class="note" id="todayNote"></p>
+          <div class="table-wrap">
+            <table class="board">
+              <thead><tr>
+                <th data-sort="rank" class="num sticky-a">#</th>
+                <th data-sort="title" class="sticky-b">Project</th>
+                <th data-sort="votes" class="num">Weighted votes</th>
+                <th data-sort="today" class="num" id="thToday">Today</th>
+                <th data-sort="1h" class="num">1h</th>
+                <th data-sort="5h" class="num">5h</th>
+                <th data-sort="10h" class="num">10h</th>
+                <th data-sort="24h" class="num">24h</th>
+                <th data-sort="rankChg" class="num" id="thRank">Rank Δ</th>
+                <th class="num"><span class="sr">Chart</span></th>
+              </tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <p class="note">Hover or tap a change to see exactly which two collections it compares. Click a column to sort.</p>
+        </section>
+      </div>
+
+      <aside class="col-side">
+        <section class="card feed-card" aria-labelledby="feedTitle">
+          <div class="card-head tight">
+            <div>
+              <p class="label"><span class="live-dot"></span>&nbsp;Recent updates</p>
+              <h2 id="feedTitle">Live feed</h2>
+            </div>
+          </div>
+          <div class="seg small wide" id="feedSeg">
+            <button data-feed="all" aria-pressed="true">All</button><button data-feed="rex">Rex</button><button data-feed="top">Top 10</button><button data-feed="alerts">Alerts</button>
+          </div>
+          <ol class="feed" id="feed"></ol>
+        </section>
+
+        <section class="card" aria-labelledby="projTitle">
+          <p class="label">Projection</p>
+          <h2 id="projTitle">If the current pace holds</h2>
+          <div id="projection"></div>
+        </section>
+
+        <section class="card" aria-labelledby="sysTitle">
+          <p class="label">System</p>
+          <h2 id="sysTitle">Collector status</h2>
+          <dl class="sys" id="system"></dl>
+        </section>
+      </aside>
+    </div>
+
+    <footer class="foot">
+      <div class="foot-grid">
+        <div>
+          <p class="label">About the numbers</p>
+          <p>Totals are the <strong>weighted votes</strong> shown on the public ballot. Newsletter-confirmed votes can count double, so they are not a count of unique voters. Every change here is the difference between two observed totals, not proof of how many people voted.</p>
+        </div>
+        <div>
+          <p class="label">How it updates</p>
+          <p>A GitHub Actions job reads the public page about every 3 minutes and stores a timestamped snapshot. This page checks for new snapshots every minute. It is periodically updated, not second-by-second live.</p>
+        </div>
+        <div>
+          <p class="label">Comparison windows</p>
+          <p id="tolText">1h ±20 min · 5h ±45 min · 10h ±60 min · 24h ±90 min · today: Toronto midnight ±45 min. Without a collection in that range the cell shows “Collecting history”.</p>
+        </div>
+      </div>
+      <p class="fine">Source: <a id="sourceLink" href="https://schools.tks.world/high-agency-fund" target="_blank" rel="noopener">schools.tks.world/high-agency-fund</a> · Unofficial tracker, not affiliated with TKS. Times shown in Toronto time.</p>
+    </footer>
+  </main>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <div class="tip" id="tip" role="tooltip" hidden></div>
+</body>
+</html>

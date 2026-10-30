@@ -1,0 +1,309 @@
+// Pure calculations over collected snapshots. No DOM access, so it runs in the
+// browser and under `node --test` alike.
+//
+// A snapshot record is {t, u, c}: totals `c` ({slug: weighted votes}) were first seen at
+// collection time `t` and confirmed unchanged up to collection time `u`. Every number
+// below is a difference between two observed totals; nothing is interpolated.
+
+export const TZ = 'America/Toronto';
+const MIN = 60 * 1000;
+const HOUR = 60 * MIN;
+
+// Rolling windows and how far the baseline observation may sit from the exact target.
+export const WINDOWS = [
+  { key: '1h', label: '1h', ms: 1 * HOUR, tol: 20 * MIN },
+  { key: '5h', label: '5h', ms: 5 * HOUR, tol: 45 * MIN },
+  { key: '10h', label: '10h', ms: 10 * HOUR, tol: 60 * MIN },
+  { key: '24h', label: '24h', ms: 24 * HOUR, tol: 90 * MIN },
+];
+export const MIDNIGHT_TOL = 45 * MIN;
+export const MIN_PACE_SPAN = 1 * HOUR;
+
+// ------------------------------------------------------------------ parsing
+
+/**
+ * Lines hold either "c" (all totals) or "d" (changes since the previous line, null =
+ * no longer listed). A malformed line breaks the delta chain, so later deltas are
+ * dropped until the next full keyframe rather than being applied to the wrong base.
+ */
+export function parseSnapshots(text) {
+  const out = [];
+  let prev = null;
+  for (const line of String(text).split('\n')) {
+    if (!line.trim()) continue;
+    let r;
+    try { r = JSON.parse(line); } catch { prev = null; continue; }
+    const t = Date.parse(r.t), u = Date.parse(r.u);
+    if (Number.isNaN(t) || Number.isNaN(u)) { prev = null; continue; }
+    let c;
+    if (r.c && typeof r.c === 'object') c = { ...r.c };
+    else if (r.d && typeof r.d === 'object' && prev) {
+      c = { ...prev };
+      for (const [slug, n] of Object.entries(r.d)) {
+        if (n === null) delete c[slug]; else c[slug] = n;
+      }
+    } else { prev = null; continue; }
+    out.push({ t, u: Math.max(t, u), c });
+    prev = c;
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
+
+/** Every instant at which totals were actually observed. */
+export function observations(records) {
+  const obs = [];
+  for (const r of records) {
+    obs.push({ time: r.t, counts: r.c });
+    if (r.u > r.t) obs.push({ time: r.u, counts: r.c });
+  }
+  return obs;
+}
+
+// ------------------------------------------------------------------ ranking
+
+export function sortedSlugs(counts) {
+  return Object.keys(counts).sort((a, b) => counts[b] - counts[a] || a.localeCompare(b));
+}
+
+/** Competition ranking: equal totals share a rank (1, 2, 2, 4). */
+export function rankMap(counts) {
+  const ranks = {};
+  let prev = null, rank = 0;
+  sortedSlugs(counts).forEach((slug, i) => {
+    if (counts[slug] !== prev) { rank = i + 1; prev = counts[slug]; }
+    ranks[slug] = rank;
+  });
+  return ranks;
+}
+
+// ------------------------------------------------------------------ time zones
+
+const partsFmt = new Intl.DateTimeFormat('en-CA', {
+  timeZone: TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit',
+});
+
+export function zonedParts(ms) {
+  const p = {};
+  for (const { type, value } of partsFmt.formatToParts(new Date(ms))) p[type] = Number(value);
+  return { y: p.year, m: p.month, d: p.day, h: p.hour % 24, min: p.minute, s: p.second };
+}
+
+function zoneOffset(ms) {
+  const p = zonedParts(ms);
+  return Date.UTC(p.y, p.m - 1, p.d, p.h, p.min, p.s) - Math.floor(ms / 1000) * 1000;
+}
+
+/** UTC instant of the most recent Toronto midnight at or before `ms` (DST-safe). */
+export function zonedMidnight(ms) {
+  const p = zonedParts(ms);
+  const guess = Date.UTC(p.y, p.m - 1, p.d);
+  let m = guess - zoneOffset(guess);
+  const off2 = zoneOffset(m);
+  if (guess - off2 !== m) m = guess - off2;
+  return m;
+}
+
+export function zonedDateKey(ms) {
+  const p = zonedParts(ms);
+  return `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}`;
+}
+
+// ------------------------------------------------------------------ baselines
+
+/**
+ * Totals at (or near) `target`, never at or after `notAfter`.
+ * 1. If one record spans the target (identical totals observed before and after it),
+ *    the totals at the target are known exactly.
+ * 2. Otherwise use the nearest observation within `tol`.
+ * Returns {time, counts, exact, span?} or null when history does not reach that far.
+ */
+export function baselineAt(records, target, tol, notAfter) {
+  for (const r of records) {
+    if (r.t <= target && target <= r.u && target < notAfter) {
+      return { time: target, counts: r.c, exact: true, span: [r.t, r.u] };
+    }
+  }
+  let best = null;
+  for (const o of observations(records)) {
+    if (o.time >= notAfter) continue;
+    const d = Math.abs(o.time - target);
+    if (d <= tol && (!best || d < Math.abs(best.time - target))) best = o;
+  }
+  return best ? { time: best.time, counts: best.counts, exact: false } : null;
+}
+
+export function current(records) {
+  const last = records[records.length - 1];
+  return last ? { time: last.u, counts: last.c } : null;
+}
+
+function firstSeen(records, slug) {
+  for (const r of records) if (slug in r.c) return { time: r.t, value: r.c[slug] };
+  return null;
+}
+
+/**
+ * Change for one project between a baseline and the current totals.
+ *   {status:'ok', delta, from, to, fromValue, toValue, exact}
+ *   {status:'new', delta, from, to}   project was not listed at the baseline; delta is
+ *                                     measured from when we first saw it, never from zero
+ *   {status:'collecting'}             not enough history
+ */
+export function changeFor(records, slug, base, cur = current(records)) {
+  if (!cur || !(slug in cur.counts)) return { status: 'collecting' };
+  if (!base) return { status: 'collecting' };
+  if (!(slug in base.counts)) {
+    const fs = firstSeen(records, slug);
+    return { status: 'new', delta: cur.counts[slug] - fs.value, from: fs.time, to: cur.time };
+  }
+  return {
+    status: 'ok', delta: cur.counts[slug] - base.counts[slug],
+    from: base.time, to: cur.time, fromValue: base.counts[slug], toValue: cur.counts[slug],
+    exact: base.exact,
+  };
+}
+
+export function windowBaseline(records, win) {
+  const cur = current(records);
+  if (!cur) return null;
+  return baselineAt(records, cur.time - win.ms, win.tol, cur.time);
+}
+
+/**
+ * Baseline for "today" (Toronto). kind:
+ *   'midnight'        a baseline near Toronto midnight exists
+ *   'since'           collection had a gap at midnight; change is since the first observation today
+ *   'tracking-began'  tracking itself started today, after midnight
+ *   'none'            no observation yet today
+ */
+export function todayBaseline(records, nowMs) {
+  const cur = current(records);
+  const midnight = zonedMidnight(nowMs);
+  if (!cur || cur.time < midnight) return { kind: 'none', midnight };
+  const b = baselineAt(records, midnight, MIDNIGHT_TOL, cur.time);
+  if (b) return { kind: 'midnight', midnight, base: b };
+  const obs = observations(records);
+  const first = obs.find((o) => o.time >= midnight);
+  if (!first || first.time >= cur.time) return { kind: 'none', midnight };
+  const kind = obs[0].time >= midnight ? 'tracking-began' : 'since';
+  return { kind, midnight, base: { time: first.time, counts: first.counts, exact: false } };
+}
+
+export function rankChange(base, cur, slug) {
+  if (!base || !cur || !(slug in cur.counts)) return { status: 'collecting' };
+  if (!(slug in base.counts)) return { status: 'new' };
+  const before = rankMap(base.counts)[slug], after = rankMap(cur.counts)[slug];
+  return { status: 'ok', before, after, delta: before - after };
+}
+
+// ------------------------------------------------------------------ series for charts
+
+/** [{x: time, y: total}] for one project at every observation inside [from, ∞). */
+export function seriesFor(records, slug, from = -Infinity) {
+  const pts = [];
+  for (const o of observations(records)) {
+    if (o.time < from || !(slug in o.counts)) continue;
+    pts.push({ x: o.time, y: o.counts[slug] });
+  }
+  return pts;
+}
+
+export function rankSeriesFor(records, slug, from = -Infinity) {
+  const pts = [];
+  for (const o of observations(records)) {
+    if (o.time < from || !(slug in o.counts)) continue;
+    pts.push({ x: o.time, y: rankMap(o.counts)[slug] });
+  }
+  return pts;
+}
+
+/** Net gain since the first observation of the range (or since first seen, if later). */
+export function gainSeriesFor(records, slug, from = -Infinity) {
+  const s = seriesFor(records, slug, from);
+  if (!s.length) return s;
+  const base = s[0].y;
+  return s.map((p) => ({ x: p.x, y: p.y - base }));
+}
+
+// ------------------------------------------------------------------ events feed
+
+/**
+ * Differences between consecutive records, newest first.
+ * kinds: gain, decrease, new, removed, rank (moved within top `rankDepth`), cutoff (entered/left top 5)
+ */
+export function buildEvents(records, { rankDepth = 10, cutoff = 5 } = {}) {
+  const events = [];
+  for (let i = 1; i < records.length; i++) {
+    const prev = records[i - 1], next = records[i];
+    const at = next.t, since = prev.u;
+    const r0 = rankMap(prev.c), r1 = rankMap(next.c);
+    for (const slug of Object.keys(next.c)) {
+      if (!(slug in prev.c)) { events.push({ kind: 'new', slug, at, since, total: next.c[slug] }); continue; }
+      const delta = next.c[slug] - prev.c[slug];
+      if (delta > 0) events.push({ kind: 'gain', slug, at, since, delta, total: next.c[slug], rank: r1[slug] });
+      if (delta < 0) events.push({ kind: 'decrease', slug, at, since, delta, total: next.c[slug], rank: r1[slug] });
+      const before = r0[slug], after = r1[slug];
+      if (before !== after && Math.min(before, after) <= rankDepth) {
+        const passed = Object.keys(prev.c).filter((o) => o !== slug && o in next.c
+          && (after < before ? r0[o] < before && r0[o] >= after && r1[o] > after
+                             : r0[o] > before && r0[o] <= after && r1[o] < after));
+        events.push({ kind: 'rank', slug, at, since, before, after, passed });
+      }
+      if ((before <= cutoff) !== (after <= cutoff)) {
+        events.push({ kind: 'cutoff', slug, at, since, entered: after <= cutoff, before, after });
+      }
+    }
+    for (const slug of Object.keys(prev.c)) {
+      if (!(slug in next.c)) events.push({ kind: 'removed', slug, at, since, total: prev.c[slug] });
+    }
+  }
+  return events.sort((a, b) => b.at - a.at);
+}
+
+// ------------------------------------------------------------------ projections
+
+/**
+ * Straight-line projection to `closeMs` from the observed pace over the last
+ * min(24h, available history). Returns null if fewer than MIN_PACE_SPAN of history.
+ * {projected: {slug: votes}, pacePerHour: {slug}, from, to, spanMs}
+ */
+export function project(records, closeMs, maxSpan = 24 * HOUR) {
+  const cur = current(records);
+  if (!cur || !records.length) return null;
+  const start = records[0].t;
+  const span = Math.min(maxSpan, cur.time - start);
+  if (span < MIN_PACE_SPAN) return null;
+  const base = baselineAt(records, cur.time - span, span * 0.25, cur.time);
+  if (!base) return null;
+  const remaining = Math.max(0, closeMs - cur.time) / HOUR;
+  const projected = {}, pacePerHour = {};
+  for (const slug of Object.keys(cur.counts)) {
+    let fromV, fromT;
+    if (slug in base.counts) { fromV = base.counts[slug]; fromT = base.time; } else {
+      const fs = firstSeen(records, slug); fromV = fs.value; fromT = fs.time;
+    }
+    const hours = (cur.time - fromT) / HOUR;
+    const pace = hours >= MIN_PACE_SPAN / HOUR ? Math.max(0, (cur.counts[slug] - fromV) / hours) : 0;
+    pacePerHour[slug] = pace;
+    projected[slug] = Math.round(cur.counts[slug] + pace * remaining);
+  }
+  return { projected, pacePerHour, from: base.time, to: cur.time, spanMs: cur.time - base.time, remainingHours: remaining };
+}
+
+// ------------------------------------------------------------------ gaps
+
+/** Lead (+) or deficit (−) of `slug` against whoever holds position `pos` (1-based). */
+export function gapToPosition(counts, slug, pos) {
+  const order = sortedSlugs(counts);
+  const me = order.indexOf(slug);
+  if (me < 0 || order.length < pos) return null;
+  const myRank = rankMap(counts)[slug];
+  if (order[pos - 1] === slug) {
+    // We hold this position: compare with the next one down.
+    const other = order[pos];
+    return other ? { self: true, other, gap: counts[slug] - counts[other], myRank } : null;
+  }
+  const other = order[pos - 1];
+  return { self: false, other, gap: counts[slug] - counts[other], myRank };
+}

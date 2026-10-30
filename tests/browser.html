@@ -1,0 +1,22 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>metrics checks</title>
+<body style="font:14px ui-monospace,monospace;background:#0b0a09;color:#efebe4;padding:20px">
+<h1 style="font-size:16px">metrics.js checks</h1>
+<ol id="out"></ol>
+<p id="sum"></p>
+<script type="module">
+  // Serve the repository root (python -m http.server) and open /tests/browser.html
+  import { cases } from './metrics.cases.mjs';
+  let pass = 0;
+  for (const [name, fn] of cases) {
+    const li = document.createElement('li');
+    try { fn(); pass++; li.textContent = 'ok   ' + name; li.style.color = '#8fd3a0'; }
+    catch (e) { li.textContent = 'FAIL ' + name + ' :: ' + e.message; li.style.color = '#ff7a6b'; }
+    document.getElementById('out').appendChild(li);
+  }
+  const sum = document.getElementById('sum');
+  sum.textContent = `${pass}/${cases.length} passed`;
+  sum.dataset.result = pass === cases.length ? 'pass' : 'fail';
+</script>
+</body>
