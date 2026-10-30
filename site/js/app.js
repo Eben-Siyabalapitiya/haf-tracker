@@ -128,7 +128,7 @@ async function poll() {
     found.sort((a, b) => String(b.status.last_success || '').localeCompare(String(a.status.last_success || '')));
     state.status = found[0].status;
     for (const { src, status } of found) {
-      const key = `${status.last_success}|${status.last_change}`;
+      const key = `${status.last_snapshot || status.last_success}|${status.last_change}`;
       if (key === state.loadedKey) break;
       try {
         const v = encodeURIComponent(key);
@@ -143,7 +143,7 @@ async function poll() {
         state.projects = JSON.parse(projText);
         state.source = src;
         // Only remember the key once the snapshot file has caught up with its status file.
-        if (newestU >= Date.parse(status.last_success) - 1000) state.loadedKey = key;
+        if (newestU >= Date.parse(status.last_snapshot || status.last_success) - 1000) state.loadedKey = key;
         break;
       } catch { /* try the next source */ }
     }
