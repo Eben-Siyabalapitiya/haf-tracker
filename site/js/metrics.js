@@ -17,7 +17,6 @@ export const WINDOWS = [
   { key: '24h', label: '24h', ms: 24 * HOUR, tol: 90 * MIN },
 ];
 export const MIDNIGHT_TOL = 45 * MIN;
-export const MIN_PACE_SPAN = 1 * HOUR;
 
 // ------------------------------------------------------------------ parsing
 
@@ -302,52 +301,24 @@ export function removedSince(records, since = -Infinity) {
   return out;
 }
 
-// ------------------------------------------------------------------ projections
+// ------------------------------------------------------------------ forecast
 
 /**
- * Straight-line projection to `closeMs` from the observed pace over the last
- * min(24h, available history). Returns null if fewer than MIN_PACE_SPAN of history.
- * {projected: {slug: votes}, pacePerHour: {slug}, from, to, spanMs}
- */
-export function project(records, closeMs, maxSpan = 24 * HOUR) {
-  const cur = current(records);
-  if (!cur || !records.length) return null;
-  const start = records[0].t;
-  const span = Math.min(maxSpan, cur.time - start);
-  if (span < MIN_PACE_SPAN) return null;
-  const base = baselineAt(records, cur.time - span, span * 0.25, cur.time);
-  if (!base) return null;
-  const remaining = Math.max(0, closeMs - cur.time) / HOUR;
-  const projected = {}, pacePerHour = {};
-  for (const slug of Object.keys(cur.counts)) {
-    let fromV, fromT;
-    if (slug in base.counts) { fromV = base.counts[slug]; fromT = base.time; } else {
-      const fs = firstSeen(records, slug); fromV = fs.value; fromT = fs.time;
-    }
-    const hours = (cur.time - fromT) / HOUR;
-    const pace = hours >= MIN_PACE_SPAN / HOUR ? Math.max(0, (cur.counts[slug] - fromV) / hours) : 0;
-    pacePerHour[slug] = pace;
-    projected[slug] = Math.round(cur.counts[slug] + pace * remaining);
-  }
-  return { projected, pacePerHour, from: base.time, to: cur.time, spanMs: cur.time - base.time, remainingHours: remaining };
-}
-
-// ------------------------------------------------------------------ blended forecast
-
-/**
- * Three paces, each measured over a real window, blended so the forecast reacts to
- * bursts and slowdowns without trusting any single stretch of time:
- *   recent  last 3h (or 1h)       our snapshots; catches surges and lulls right now
+ * Three paces, each measured over a real window:
+ *   recent  last 3h (or 1h)       our snapshots; surges and lulls happening now
  *   day     last 24h (or 12h/6h)  our snapshots; smooths the overnight dip
  *   week    trailing ~7 days      the source's weekVotes; the long-run baseline
- * Weights are renormalised over whichever paces exist. The range is the lowest and
- * highest pace applied to the remaining time. Negative paces (vote removals) are kept in
- * the breakdown but count as 0 going forward.
+ * Momentum fades: the recent pace drives only the next MOMENTUM_HOURS, then the steadier
+ * day/week blend takes over. So a burst or a slowdown moves the forecast without one hot
+ * hour being stretched across two days. The range takes the slowest and fastest paces in
+ * each stretch, widened to at least ±25% of the long-run pace (±50% with only one). Negative paces (vote removals) stay visible in the breakdown but count as
+ * 0 going forward.
  */
-export const BLEND = [
-  { key: 'recent', label: 'Recent', windows: [3 * HOUR, 1 * HOUR], weight: 0.25 },
-  { key: 'day', label: 'Last day', windows: [24 * HOUR, 12 * HOUR, 6 * HOUR], weight: 0.35 },
-  { key: 'week', label: '7-day', weight: 0.40 },
+export const MOMENTUM_HOURS = 3;
+export const PACES = [
+  { key: 'recent', label: 'Recent', windows: [3 * HOUR, 1 * HOUR] },
+  { key: 'day', label: 'Last day', windows: [24 * HOUR, 12 * HOUR, 6 * HOUR], weight: 0.45 },
+  { key: 'week', label: '7-day', weight: 0.55 },
 ];
 
 /** Pace over a window ending at the latest collection, or null without history that far back. */
@@ -379,39 +350,50 @@ export function forecast(records, closeMs, projects = {}) {
   const cur = current(records);
   if (!cur) return null;
   const remainingHours = Math.max(0, closeMs - cur.time) / HOUR;
-  const out = { at: cur.time, remainingHours, projected: {}, low: {}, high: {}, pacePerHour: {}, parts: {}, trend: {} };
+  const nearH = Math.min(MOMENTUM_HOURS, remainingHours), restH = remainingHours - nearH;
+  const out = { at: cur.time, remainingHours, nearHours: nearH, projected: {}, low: {}, high: {}, pacePerHour: {}, parts: {}, trend: {} };
   let any = false;
   for (const slug of Object.keys(cur.counts)) {
     const parts = [];
-    for (const c of BLEND) {
+    for (const c of PACES) {
       let m = null;
       if (c.key === 'week') m = weekPace(projects[slug]);
       else {
         for (const w of c.windows) {
           // The "day" pace must look further back than the "recent" one to add anything.
-          if (c.key === 'day' && parts[0] && w <= parts[0].hours * HOUR * 1.5) break;
+          if (c.key === 'day' && parts[0]?.key === 'recent' && w <= parts[0].hours * HOUR * 1.5) break;
           m = measuredPace(records, slug, w);
           if (m) break;
         }
       }
-      if (m) parts.push({ ...m, key: c.key, label: c.label, weight: c.weight });
+      if (m) parts.push({ ...m, key: c.key, label: c.label, weight: c.weight || 0 });
     }
     if (!parts.length) continue;
     any = true;
-    const total = parts.reduce((s, p) => s + p.weight, 0);
-    const rates = parts.map((p) => Math.max(0, p.rate));
-    const central = parts.reduce((s, p, i) => s + rates[i] * p.weight / total, 0);
-    const now = cur.counts[slug];
-    out.parts[slug] = parts.map((p) => ({ ...p, share: p.weight / total }));
-    out.pacePerHour[slug] = central;
-    out.projected[slug] = Math.round(now + central * remainingHours);
-    out.low[slug] = Math.round(now + Math.min(...rates) * remainingHours);
-    out.high[slug] = Math.round(now + Math.max(...rates) * remainingHours);
+    const pos = (p) => Math.max(0, p.rate);
     const recent = parts.find((p) => p.key === 'recent');
-    const ref = parts.find((p) => p.key === 'day') || parts.find((p) => p.key === 'week');
+    const longRun = parts.filter((p) => p.key !== 'recent');
+    // Long-run pace: day/week blend; falls back to the recent pace when nothing longer exists.
+    const total = longRun.reduce((s, p) => s + p.weight, 0);
+    const base = longRun.length ? longRun.reduce((s, p) => s + pos(p) * p.weight / total, 0) : pos(recent);
+    // Daily voting swings a lot (a best day can be 2–3× the weekly average), so the long-run
+    // range is never narrower than ±25%, and ±50% when only one long-run pace exists.
+    const spread = longRun.length >= 2 ? 0.25 : 0.5;
+    const baseLo = Math.min(base * (1 - spread), ...longRun.map(pos));
+    const baseHi = Math.max(base * (1 + spread), ...longRun.map(pos));
+    const near = recent ? pos(recent) : base;
+    const now = cur.counts[slug];
+    out.parts[slug] = parts.map((p) => ({
+      ...p,
+      use: p.key === 'recent' ? `next ${Math.round(nearH)}h` : longRun.length > 1 ? `then ${Math.round(p.weight / total * 100)}%` : 'then 100%',
+    }));
+    out.projected[slug] = Math.round(now + near * nearH + base * restH);
+    out.low[slug] = Math.round(now + Math.min(near, baseLo) * nearH + baseLo * restH);
+    out.high[slug] = Math.round(now + Math.max(near, baseHi) * nearH + baseHi * restH);
+    out.pacePerHour[slug] = remainingHours > 0 ? (out.projected[slug] - now) / remainingHours : 0;
     let trend = 'steady';
-    if (recent && ref) {
-      const r = Math.max(0, recent.rate), b = Math.max(0, ref.rate);
+    if (recent && longRun.length) {
+      const r = pos(recent), b = base;
       if (r > b * 1.35 && r - b >= 0.5) trend = 'up';
       else if (r < b * 0.65 && b - r >= 0.5) trend = 'down';
     }
