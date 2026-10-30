@@ -521,6 +521,19 @@ def update_best_days(log: dict, result: ParseResult, now: datetime) -> dict:
     return dict(sorted(log.items()))
 
 
+def alerts(prev: dict, new: dict, names: dict) -> list:
+    """Things worth notifying about between two sets of totals: projects that disappeared
+    from the ballot and projects whose total went down (votes removed)."""
+    out = []
+    for slug in sorted(set(prev) - set(new)):
+        out.append(f"🗑️ **{names.get(slug, slug)}** was removed from the ballot (it had {prev[slug]:,} votes).")
+    for slug in sorted(set(prev) & set(new), key=lambda s: new[s] - prev[s]):
+        if new[slug] < prev[slug]:
+            out.append(f"🔻 **{names.get(slug, slug)}** lost {prev[slug] - new[slug]:,} "
+                       f"vote{'s' if prev[slug] - new[slug] != 1 else ''} ({prev[slug]:,} → {new[slug]:,}).")
+    return out
+
+
 class Store:
     def __init__(self, data_dir: str):
         self.dir = data_dir

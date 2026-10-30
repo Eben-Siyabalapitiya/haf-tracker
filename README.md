@@ -62,6 +62,14 @@ Unchanged totals don't create a new line; they extend `u` at most every 5 minute
 - All timestamps are stored in UTC and shown in Toronto time.
 - If no collection succeeds for 15 minutes the dashboard shows **Stale**; if the last attempt failed it shows the error.
 
+## Alerts
+
+When a project is removed from the ballot or a project's total goes down (votes removed), you hear about it three ways:
+
+- **On the dashboard:** a pop-up for every removal and drop (any project), plus a banner for 24 hours and an entry in the live feed. Hack The Rex moves and funding-line crossings pop up too.
+- **Browser notifications:** press **Alerts** (the bell) and allow notifications. They also arrive while the dashboard is in a background tab. On iPhone, add the page to your home screen first.
+- **With nothing open:** the collector posts each batch (at most every 5 minutes) to an issue called **Vote alerts** in this repository. GitHub emails you about it and, with the GitHub mobile app, sends a push notification. If you don't get them, check that you're watching the repository (Watch → All activity) or subscribe to the issue.
+
 ## Setup
 
 1. Push this repository to GitHub. It needs to be **public** for free Pages hosting and free Actions minutes (the collector runs almost continuously).

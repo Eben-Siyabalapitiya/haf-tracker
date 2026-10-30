@@ -36,6 +36,7 @@ jobs:
     timeout-minutes: 350
     permissions:
       contents: write
+      issues: write      # posts removed projects and vote drops to the "Vote alerts" issue
     outputs:
       changed: ${{ steps.loop.outputs.changed }}
     steps:
@@ -53,6 +54,7 @@ jobs:
           MINUTES: ${{ inputs.minutes || '330' }}
           INTERVAL: "30"
           BRANCH: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           # Data commits are attributed to the repository owner.
           git config user.name "${{ github.repository_owner }}"
