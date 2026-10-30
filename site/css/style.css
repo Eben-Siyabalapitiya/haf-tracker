@@ -109,13 +109,13 @@ strong { font-weight: 600; }
 
 /* charts */
 .chart-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 280px; min-width: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 100%; order: 3; min-width: 0; }
 .chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 6px 5px 10px; border-radius: 999px; border: 1px solid var(--line-2); font-size: 12px; color: var(--text); max-width: min(220px, 100%); min-width: 0; }
 .chip i { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip button { border: 0; background: none; color: var(--faint); cursor: pointer; padding: 0 4px; font-size: 14px; line-height: 1; }
 .chip button:hover { color: var(--text); }
-.chip-tools { display: flex; gap: 12px; }
+.chip-tools { display: flex; gap: 14px; margin-left: auto; flex-wrap: wrap; }
 .link { border: 0; background: none; padding: 0; cursor: pointer; color: var(--muted); font: 500 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
 .link:hover { color: var(--accent); }
 .chart-box { position: relative; height: 360px; }

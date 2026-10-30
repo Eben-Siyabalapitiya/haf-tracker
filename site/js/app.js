@@ -718,6 +718,8 @@ function tick() {
 
 bind();
 poll();
+// Re-measure chart labels once the web fonts have loaded.
+document.fonts?.ready.then(() => { if (chart) chart.update('none'); });
 setInterval(tick, 1000);
 setInterval(() => renderStatus(derive()), 30e3);
 tick();
