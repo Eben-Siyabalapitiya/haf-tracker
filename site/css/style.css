@@ -52,7 +52,7 @@ strong { font-weight: 600; }
 .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .brand .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
 .brand-mark { flex-shrink: 0; }
-.brand-name { font: 600 16px/1 var(--display); letter-spacing: -0.02em; }
+.brand-name { font: 600 16px/1 var(--display); letter-spacing: -0.02em; white-space: nowrap; }
 .topbar-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 
 .pill { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line-2); font: 500 11.5px/1 var(--mono); letter-spacing: 0.04em; color: var(--muted); white-space: nowrap; }
