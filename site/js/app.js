@@ -25,7 +25,7 @@ const state = {
   lastPoll: 0, pollError: null, loading: false, firstLoad: true,
   chart: store.get('chart', 'race'), range: store.get('range', 0), mom: store.get('mom', '5h'),
   feed: store.get('feed', 'all'), limit: store.get('limit', 0), rankPeriod: store.get('rankPeriod', '24h'),
-  selected: store.get('selected', null), show: store.get('show', 'rivals'), sort: { key: 'rank', dir: 1 }, search: '', showProj: store.get('showProj', true),
+  selected: store.get('selected', null), show: store.get('show', 'rivals'), notify: store.get('notify', false), sort: { key: 'rank', dir: 1 }, search: '', showProj: store.get('showProj', true),
 };
 
 // ------------------------------------------------------------------ formatting
@@ -215,6 +215,7 @@ function colorFor(slug, sel) {
 
 function render() {
   const d = derive();
+  renderBell();
   renderStatus(d);
   if (!d) { renderEmpty(); return; }
   renderHero(d);
@@ -874,25 +875,81 @@ function shortLabel(t) {
 
 // ---------------------------------------------------------------- notifications
 
+/**
+ * Alerts for new collections. Removed projects and vote drops are always alerted, for
+ * every project; then Hack The Rex news and funding-line changes. Shown as pop-ups and,
+ * when switched on with the bell, as browser notifications (which also appear while the
+ * dashboard is in a background tab).
+ */
+function alertsFor(events, d) {
+  const out = [];
+  for (const e of events) {
+    if (e.kind === 'removed') {
+      out.push({ cls: 'bad', label: 'Project removed', text: `${title(e.slug)} is no longer on the ballot (had ${fmt(e.total)} votes)`, urgent: true });
+    }
+  }
+  for (const e of events.filter((x) => x.kind === 'decrease').sort((a, b) => a.delta - b.delta)) {
+    const rex = e.slug === HL;
+    out.push({ cls: 'bad', label: rex ? 'Hack The Rex lost votes' : 'Votes removed', text: `${title(e.slug)} ${signed(e.delta)} · now ${fmt(e.total)} (#${d.ranks[e.slug] ?? '–'})`, urgent: true });
+  }
+  for (const e of events) {
+    if (e.kind === 'cutoff') out.push({ cls: e.slug === HL ? 'rex' : '', label: 'Funding line', text: `${title(e.slug)} ${e.entered ? 'entered' : 'dropped out of'} the top ${FUNDED}`, urgent: true });
+    else if (e.kind === 'rank' && (e.slug === HL || (e.passed || []).includes(HL))) out.push({ cls: 'rex', label: 'Position change', text: `${title(e.slug)} moved ${e.after < e.before ? 'up' : 'down'} to #${e.after}`, urgent: e.slug === HL });
+    else if (e.kind === 'new') out.push({ cls: '', label: 'New project', text: `${title(e.slug)} joined the ballot` });
+  }
+  const rexGain = events.filter((e) => e.slug === HL && e.kind === 'gain').reduce((s, e) => s + e.delta, 0);
+  if (rexGain) out.push({ cls: 'rex', label: 'Hack The Rex', text: `${signed(rexGain)} votes · now ${fmt(d.cur.counts[HL])} (#${d.ranks[HL]})` });
+  return out;
+}
+
 function notifyNew(prevLastT) {
   const events = M.buildEvents(state.records).filter((e) => e.at > prevLastT);
   if (!events.length) return;
   const d = derive();
-  const toasts = [];
-  const rexGain = events.filter((e) => e.slug === HL && e.kind === 'gain').reduce((s, e) => s + e.delta, 0);
-  if (rexGain) toasts.push({ cls: 'rex', label: 'Hack The Rex', text: `${signed(rexGain)} votes · now ${fmt(d.cur.counts[HL])} (#${d.ranks[HL]})` });
-  for (const e of events) {
-    if (toasts.length >= 4) break;
-    if (e.kind === 'cutoff') toasts.push({ cls: e.slug === HL ? 'rex' : '', label: 'Funding line', text: `${title(e.slug)} ${e.entered ? 'entered' : 'left'} the top ${FUNDED}` });
-    else if (e.kind === 'rank' && (e.slug === HL || (e.passed || []).includes(HL))) toasts.push({ cls: 'rex', label: 'Position change', text: `${title(e.slug)} moved ${e.after < e.before ? 'up' : 'down'} to #${e.after}` });
-    else if (e.kind === 'decrease' && (e.slug === HL || d.ranks[e.slug] <= 10)) toasts.push({ cls: 'bad', label: e.slug === HL ? 'Hack The Rex lost votes' : 'Votes removed', text: `${title(e.slug)} ${signed(e.delta)} · now ${fmt(e.total)}` });
-    else if (e.kind === 'new') toasts.push({ cls: '', label: 'New project', text: title(e.slug) });
-  }
-  if (!toasts.length) {
+  const list = alertsFor(events, d);
+  if (!list.length) {
     const sum = events.filter((e) => e.kind === 'gain').reduce((s, e) => s + e.delta, 0);
-    toasts.push({ cls: '', label: 'New collection', text: `${signed(sum)} votes across the ballot` });
+    list.push({ cls: '', label: 'New collection', text: `${signed(sum)} votes across the ballot` });
   }
-  for (const t of toasts.slice(0, 4)) toast(t);
+  const shown = list.slice(0, 5);
+  for (const t of shown) toast(t);
+  if (list.length > shown.length) toast({ cls: '', label: 'More alerts', text: `${list.length - shown.length} more in the live feed` });
+  systemNotify(list.filter((t) => t.urgent || t.cls === 'rex'));
+}
+
+function systemNotify(list) {
+  if (!state.notify || !('Notification' in window) || Notification.permission !== 'granted' || !list.length) return;
+  const send = (titleText, body, tag) => {
+    try { new Notification(titleText, { body, tag, icon: document.querySelector('link[rel=icon]')?.href }); } catch { /* unsupported context */ }
+  };
+  if (list.length <= 3) list.forEach((t, i) => send(t.label, t.text, `htr-${Date.now()}-${i}`));
+  else send(`${list.length} vote alerts`, list.slice(0, 4).map((t) => `${t.label}: ${t.text}`).join('\n'), `htr-${Date.now()}`);
+}
+
+async function toggleNotifications() {
+  if (!('Notification' in window)) {
+    toast({ cls: 'bad', label: 'Alerts', text: 'This browser does not support notifications. On iPhone, add the page to your home screen first.' });
+    return;
+  }
+  if (state.notify) { setPref('notify', false); toast({ cls: '', label: 'Alerts off', text: 'Browser notifications are off. Pop-ups on the page still appear.' }); return; }
+  let perm = Notification.permission;
+  if (perm === 'default') perm = await Notification.requestPermission();
+  if (perm !== 'granted') {
+    toast({ cls: 'bad', label: 'Alerts blocked', text: 'Notifications are blocked for this site. Allow them in your browser settings, then try again.' });
+    setPref('notify', false);
+    return;
+  }
+  setPref('notify', true);
+  toast({ cls: 'rex', label: 'Alerts on', text: 'You will get a notification when a project is removed, loses votes, crosses the funding line, or Hack The Rex moves.' });
+  systemNotify([{ label: 'Alerts are on', text: 'This is what a vote alert looks like.' }]);
+}
+
+function renderBell() {
+  const b = $('bellBtn');
+  if (!b) return;
+  const on = state.notify && 'Notification' in window && Notification.permission === 'granted';
+  b.setAttribute('aria-pressed', String(on));
+  b.querySelector('span').textContent = on ? 'Alerts on' : 'Alerts';
 }
 
 function toast({ cls: c, label, text }) {
@@ -900,7 +957,7 @@ function toast({ cls: c, label, text }) {
   el.className = `toast ${c}`;
   el.innerHTML = `<p class="label">${esc(label)}</p>${esc(text)}`;
   $('toasts').appendChild(el);
-  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 350); }, 7000);
+  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 350); }, c === 'bad' ? 12000 : 7000);
 }
 
 // ---------------------------------------------------------------- interactions
@@ -909,6 +966,7 @@ function setPref(k, v) { state[k] = v; store.set(k, v); render(); }
 
 function bind() {
   $('refreshBtn').addEventListener('click', () => { state.loadedKey = null; poll(); });
+  $('bellBtn').addEventListener('click', () => toggleNotifications().then(renderBell));
   $('chartTabs').addEventListener('click', (e) => { const b = e.target.closest('[data-chart]'); if (b) setPref('chart', b.dataset.chart); });
   $('rangeSeg').addEventListener('click', (e) => { const b = e.target.closest('[data-range]'); if (b) setPref('range', Number(b.dataset.range)); });
   $('momSeg').addEventListener('click', (e) => { const b = e.target.closest('[data-mom]'); if (b) setPref('mom', b.dataset.mom); });

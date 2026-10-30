@@ -68,6 +68,7 @@ strong { font-weight: 600; }
 
 .btn { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 13px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--surface-2); cursor: pointer; font: 600 12.5px/1 var(--body); transition: border-color .15s, background .15s; }
 .btn:hover { border-color: var(--accent); }
+.btn.bell[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .btn.spinning svg { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 

@@ -13,6 +13,7 @@ import argparse
 import os
 import sys
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import tracker  # noqa: E402
@@ -28,6 +29,7 @@ def main(argv=None) -> int:
     ap.add_argument("--quick", action="store_true",
                     help="read the small vote feed the page polls (falls back to the full page if needed)")
     ap.add_argument("--stats-file", help="with --quick, parse this saved vote feed instead of fetching")
+    ap.add_argument("--alerts-file", help="append removed projects and vote drops to this file (Markdown)")
     args = ap.parse_args(argv)
 
     store = tracker.Store(os.path.normpath(args.data_dir))
@@ -48,7 +50,16 @@ def main(argv=None) -> int:
         print(f"Kept the last valid data. Status {'updated' if wrote else 'unchanged (already reported)'}.")
         return 1 if args.fail_on_error else 0
 
+    previous = tracker.load_records(store.snapshots)
     outcome = store.record_success(result, now, timedelta(minutes=args.heartbeat_minutes))
+    if outcome == "appended" and previous and args.alerts_file:
+        names = {s: m.get("title", s) for s, m in store.known_projects().items()}
+        found = tracker.alerts(previous[-1]["c"], result.counts, names)
+        if found:
+            with open(args.alerts_file, "a", encoding="utf-8") as fh:
+                fh.write(f"**{toronto_time(now)}**\n" + "\n".join(f"- {a}" for a in found) + "\n\n")
+            for a in found:
+                print(f"::warning title=Vote alert::{a}")
     for w in result.warnings:
         print(f"::notice::{w}")
     top = sorted(result.projects.values(), key=lambda p: -p.count)[:5]
@@ -56,6 +67,13 @@ def main(argv=None) -> int:
     for i, p in enumerate(top, 1):
         print(f"  {i}. {p.title}: {p.count}")
     return 0
+
+
+def toronto_time(now):
+    try:
+        return now.astimezone(ZoneInfo("America/Toronto")).strftime("%b %d, %I:%M %p Toronto").replace(" 0", " ")
+    except ZoneInfoNotFoundError:   # e.g. Windows without the tzdata package
+        return now.strftime("%b %d, %H:%M UTC")
 
 
 def quick(args, store):

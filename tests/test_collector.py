@@ -191,6 +191,44 @@ class VoteFeedTests(unittest.TestCase):
             shutil.rmtree(d)
 
 
+class AlertTests(unittest.TestCase):
+    def test_alerts_for_removed_projects_and_vote_drops_only(self):
+        prev = {"a-1": 100, "b-2": 50, "c-3": 20, "d-4": 7}
+        new = {"a-1": 104, "b-2": 47, "c-3": 19}
+        found = tracker.alerts(prev, new, {"a-1": "Alpha", "b-2": "Beta", "c-3": "Gamma", "d-4": "Delta"})
+        self.assertEqual(found, [
+            "🗑️ **Delta** was removed from the ballot (it had 7 votes).",
+            "🔻 **Beta** lost 3 votes (50 → 47).",
+            "🔻 **Gamma** lost 1 vote (20 → 19).",
+        ])
+        self.assertEqual(tracker.alerts(prev, prev, {}), [])
+
+    def test_collector_writes_alerts_file(self):
+        d = tempfile.mkdtemp()
+        try:
+            data, alerts = os.path.join(d, "data"), os.path.join(d, "alerts.md")
+            first, second = os.path.join(d, "1.html"), os.path.join(d, "2.html")
+            with open(first, "w", encoding="utf-8") as fh:
+                fh.write(make_page())
+            smaller = [(s, t, sc, 650 if s.startswith("mac") else n) for s, t, sc, n in PROJECTS if not s.startswith("fuse")]
+            with open(second, "w", encoding="utf-8") as fh:
+                fh.write(make_page(smaller))
+            collect.main(["--data-dir", data, "--html-file", first, "--alerts-file", alerts])
+            self.assertFalse(os.path.exists(alerts))        # nothing to compare with yet
+            snap = os.path.join(data, "snapshots.jsonl")
+            recs = tracker.load_records(snap)
+            earlier = tracker.iso(tracker.parse_iso(recs[0]["t"]) - timedelta(minutes=1))
+            recs[0].update(t=earlier, u=earlier)
+            tracker.dump_records(snap, recs)
+            collect.main(["--data-dir", data, "--html-file", second, "--alerts-file", alerts])
+            with open(alerts, encoding="utf-8") as fh:
+                text = fh.read()
+            self.assertIn("**FUSE Society** was removed from the ballot (it had 361 votes)", text)
+            self.assertIn("**Mac Design Cup 2026** lost 10 votes (660 → 650)", text)
+        finally:
+            shutil.rmtree(d)
+
+
 class SourceHistoryTests(unittest.TestCase):
     def test_best_day_log_keeps_each_dated_value(self):
         r = tracker.parse_page(make_page())
