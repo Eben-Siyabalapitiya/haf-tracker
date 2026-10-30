@@ -23,7 +23,7 @@ const store = {
 const state = {
   records: [], projects: {}, status: {}, loadedKey: null, source: null,
   lastPoll: 0, pollError: null, loading: false, firstLoad: true,
-  chart: store.get('chart', 'totals'), range: store.get('range', 0), mom: store.get('mom', '5h'),
+  chart: store.get('chart', 'race'), range: store.get('range', 0), mom: store.get('mom', '5h'),
   feed: store.get('feed', 'all'), limit: store.get('limit', 0), rankPeriod: store.get('rankPeriod', '24h'),
   selected: store.get('selected', null), show: store.get('show', 'rivals'), sort: { key: 'rank', dir: 1 }, search: '', showProj: store.get('showProj', true),
 };
