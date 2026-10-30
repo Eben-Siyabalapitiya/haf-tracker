@@ -1,5 +1,7 @@
 # Hack The Rex vote tracker
 
+**Live dashboard: https://eben-siyabalapitiya.github.io/hack-the-rex-votes/**
+
 A live-ish dashboard for the [TKS High Agency Fund](https://schools.tks.world/high-agency-fund) ballot, built to follow **Hack The Rex** (North Albion CI) and everyone it's racing against.
 
 - Leaderboard of every project with changes for today, 1h, 5h, 10h and 24h, plus rank movement
