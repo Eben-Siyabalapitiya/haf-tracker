@@ -15,13 +15,13 @@ Everything runs on GitHub for free: a scheduled Actions job collects the data an
 ## How it works
 
 ```
-schools.tks.world  ──(public page, every ~3 min)──▶  collector/collect.py  ──▶  data/*.json(l)  ──▶  GitHub Pages
+schools.tks.world  ──(public page, every minute)──▶  collector/collect.py  ──▶  data/*.json(l)  ──▶  GitHub Pages
                                                       (GitHub Actions)          (committed)          site/ + data/
 ```
 
-1. **Collect.** `collect.yml` starts every 15 minutes. Each run reads the public ballot page every 3 minutes for about 13 minutes, so collection is close to continuous even when GitHub delays a scheduled start. Every change is committed to `data/`.
+1. **Collect.** `collect.yml` starts every 15 minutes and each run reads the public ballot page once a minute for about 28 minutes, so the next run is always queued and collection never stops, even when GitHub delays a scheduled start. Every change is committed to `data/`.
 2. **Deploy.** When a run collected something new, it rebuilds and deploys the site.
-3. **Refresh.** The dashboard checks for new data every minute. It reads from the deployed site and from the repository directly (raw.githubusercontent.com), using whichever is newer, so new snapshots usually show up within a few minutes.
+3. **Refresh.** The dashboard checks for new data every 20 seconds. About every 75 seconds it also asks the GitHub API for the newest commit and loads the data from exactly that commit, which skips GitHub's 5-minute file cache, so new votes usually show up within 1–2 minutes. GitHub allows 60 anonymous API calls an hour per network; if a shared network (say, a whole school) runs low, the page pauses API checks until the limit resets and uses the cached files (at most ~5 minutes old) in the meantime.
 
 The source has no API that browsers on other sites are allowed to call (no CORS), which is why collection happens in Actions instead of in the visitor's browser.
 
@@ -41,7 +41,7 @@ Only the public page is read, with ordinary GET requests. Nothing touches the vo
 | `data/projects.json` | Names, schools, first/last seen, and the source's own best-day and 7-day figures. |
 | `data/status.json` | Last successful collection, last error, parser used. |
 
-Unchanged totals don't create a new line; they extend `u` at most every 15 minutes, so quiet periods don't spam commits but the observed time range stays accurate.
+Unchanged totals don't create a new line; they extend `u` at most every 5 minutes, so quiet periods don't spam commits but the observed time range stays accurate.
 
 ## How the numbers are calculated
 
@@ -52,7 +52,7 @@ Unchanged totals don't create a new line; they extend `u` at most every 15 minut
 - **Decreases** show in red, appear in the feed and raise a banner for 24 hours.
 - **Projections** extend each project's pace over the last 24h (or all history, if shorter) in a straight line to the close (Oct 31, 11:59 PM ET). They need at least an hour of data and are a rough guide only.
 - All timestamps are stored in UTC and shown in Toronto time.
-- If no collection succeeds for 40 minutes the dashboard shows **Stale**; if the last attempt failed it shows the error.
+- If no collection succeeds for 15 minutes the dashboard shows **Stale**; if the last attempt failed it shows the error.
 
 ## Setup
 

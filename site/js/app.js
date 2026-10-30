@@ -2,7 +2,7 @@ import * as M from './metrics.js';
 
 const CFG = {
   highlightSlug: 'hack-the-rex-7615bd', sourceUrl: 'https://schools.tks.world/high-agency-fund',
-  votingClosesAt: '2026-11-01T03:59:00Z', fundedSpots: 5, refreshSeconds: 60, staleAfterMinutes: 40, repo: null,
+  votingClosesAt: '2026-11-01T03:59:00Z', fundedSpots: 5, refreshSeconds: 20, staleAfterMinutes: 15, repo: null,
   ...(window.TRACKER_CONFIG || {}),
 };
 const HL = CFG.highlightSlug;
@@ -63,9 +63,44 @@ function repoInfo() {
   const seg = location.pathname.split('/').filter(Boolean)[0];
   return { owner, name: seg && !seg.includes('.') ? seg : host, branch: 'main' };
 }
-const SOURCES = [{ name: 'site', label: 'this site', base: 'data/' }];
 const repo = repoInfo();
-if (repo) SOURCES.push({ name: 'repo', label: 'GitHub repository', base: `https://raw.githubusercontent.com/${repo.owner}/${repo.name}/${repo.branch}/data/` });
+const SITE_SOURCE = { name: 'site', label: 'this site', base: 'data/' };
+const API_EVERY = 75e3;   // GitHub allows 60 anonymous API calls per hour per network
+const head = { sha: null, checked: 0, pausedUntil: 0 };
+
+// The newest commit on the data branch. Raw files addressed by commit are never stale,
+// unlike the branch URL, which GitHub caches for up to 5 minutes. Every API call counts
+// against the hourly limit (even 304s), so check sparingly and back off near the limit.
+async function latestSha() {
+  const now = Date.now();
+  if (!repo || now < head.pausedUntil || now - head.checked < API_EVERY) return head.sha;
+  head.checked = now;
+  try {
+    const headers = { Accept: 'application/vnd.github.sha' };
+    if (head.sha) headers['If-None-Match'] = `"${head.sha}"`;
+    const res = await fetch(`https://api.github.com/repos/${repo.owner}/${repo.name}/commits/${repo.branch}`,
+      { headers, cache: 'no-store' });
+    const left = Number(res.headers.get('x-ratelimit-remaining'));
+    const reset = Number(res.headers.get('x-ratelimit-reset')) * 1000;
+    if (res.ok) {
+      const sha = (await res.text()).trim();
+      if (/^[0-9a-f]{40}$/.test(sha)) head.sha = sha;
+    }
+    if (res.status === 403 || res.status === 429 || (Number.isFinite(left) && left <= 3)) {
+      head.pausedUntil = reset > now ? reset : now + 10 * 60e3;
+    }
+  } catch { /* offline or blocked; fall back to the other sources */ }
+  return head.sha;
+}
+
+async function sources() {
+  if (!repo) return [SITE_SOURCE];
+  const raw = `https://raw.githubusercontent.com/${repo.owner}/${repo.name}`;
+  const sha = await latestSha();
+  const list = [{ name: 'branch', label: 'GitHub (cached up to 5 min)', base: `${raw}/${repo.branch}/data/` }, SITE_SOURCE];
+  if (sha) list.unshift({ name: 'commit', label: 'GitHub (latest commit)', base: `${raw}/${sha}/data/` });
+  return list;
+}
 
 async function getText(url) {
   const ctl = new AbortController();
@@ -83,7 +118,7 @@ async function poll() {
   $('refreshBtn').classList.add('spinning');
   const prevLast = state.records.length ? state.records[state.records.length - 1].t : null;
   try {
-    const found = (await Promise.allSettled(SOURCES.map(async (src) => {
+    const found = (await Promise.allSettled((await sources()).map(async (src) => {
       const status = JSON.parse(await getText(`${src.base}status.json?t=${Date.now()}`));
       return { src, status };
     }))).filter((r) => r.status === 'fulfilled').map((r) => r.value);
@@ -228,7 +263,7 @@ function renderStatus(d) {
   if (d) rows.push(['Projects', fmt(Object.keys(d.cur.counts).length)]);
   if (state.status.parser_strategy) rows.push(['Parser', esc(state.status.parser_strategy)]);
   if (err) rows.push(['Last error', `<span class="${errNewer ? 'err' : 'zero'}">${esc(err.message)}<br>${when(Date.parse(err.at))}</span>`]);
-  rows.push(['Schedule', 'GitHub Actions · ~3 min']);
+  rows.push(['Schedule', 'GitHub Actions · every minute']);
   $('system').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
 }
 
@@ -348,7 +383,7 @@ function renderChart(d) {
   const empty = $('chartEmpty');
   if (points < 2) {
     empty.hidden = false;
-    empty.innerHTML = `<div><strong>Collecting history</strong>One snapshot so far (${when(d.cur.time)}). Lines appear after the next collection, about every 3 minutes.</div>`;
+    empty.innerHTML = `<div><strong>Collecting history</strong>One snapshot so far (${when(d.cur.time)}). Lines appear as soon as the votes change.</div>`;
   } else empty.hidden = true;
 
   const isRank = state.chart === 'rank';
