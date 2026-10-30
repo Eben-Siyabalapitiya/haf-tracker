@@ -417,7 +417,7 @@ function renderChart(d) {
 
   const from = state.range ? d.cur.time - state.range * HOUR : -Infinity;
   const proj = state.showProj ? getForecast(d) : null;
-  const projNote = proj ? ' Faded dashed lines blend recent, daily and weekly pace up to the close; the shaded band is the range. A rough guide, not a forecast.'
+  const projNote = proj ? ' Faded dashed lines: recent momentum for the next few hours, then the daily + weekly pace up to the close; the shaded band is the range. A rough guide, not a forecast.'
     : state.showProj && Date.now() < CLOSE ? ' Prediction lines appear after 1 hour of collections.' : '';
 
   const race = state.chart === 'race';
@@ -780,7 +780,7 @@ const getForecast = (d) => (Date.now() < CLOSE ? M.forecast(d.records, CLOSE, st
 function paceRows(parts) {
   return parts.map((p) => {
     const span = p.source ? `trailing ~${Math.round(p.hours / 24)} days (source)` : `${when(p.from)} → ${when(p.to)}`;
-    return `<tr><td>${esc(p.label)}</td><td>${span}</td><td class="num ${p.rate < 0 ? 'down' : ''}">${p.rate.toFixed(1)}/h</td><td class="num">${Math.round(p.share * 100)}%</td></tr>`;
+    return `<tr><td>${esc(p.label)}</td><td>${span}</td><td class="num ${p.rate < 0 ? 'down' : ''}">${p.rate.toFixed(1)}/h</td><td class="num">${esc(p.use)}</td></tr>`;
   }).join('');
 }
 
@@ -805,7 +805,7 @@ function renderProjection(d) {
     head = `<div class="proj-head"><span class="label">Hack The Rex at close</span><b>#${pr[HL]} · ~${fmt(f.projected[HL])}</b>
       <span class="zero">range ${fmt(f.low[HL])}–${fmt(f.high[HL])}</span> · <span class="${t[2]}">${t[0]} ${t[1]}</span>
       ${g ? `<br><span class="${cls(g.gap)}">${signed(g.gap)}</span> vs ${esc(title(g.other))}` : ''}
-      <table class="paces"><tr><th>Pace</th><th>Measured over</th><th class="num">Votes/h</th><th class="num">Weight</th></tr>${paceRows(f.parts[HL])}</table></div>`;
+      <table class="paces"><tr><th>Pace</th><th>Measured over</th><th class="num">Votes/h</th><th class="num">Used for</th></tr>${paceRows(f.parts[HL])}</table></div>`;
   }
   el.innerHTML = head + `<div class="proj">${shown.map((s) => {
     const t = TREND[f.trend[s]];
@@ -813,7 +813,7 @@ function renderProjection(d) {
       <span class="r">${place(pr[s], false)}</span><span class="nm">${esc(title(s))}</span>
       <span class="pv" data-tip="${esc(f.parts[s].map((p) => `${p.label}: ${p.rate.toFixed(1)}/h`).join('\n'))}">~${fmt(f.projected[s])}<small>${fmt(f.low[s])}–${fmt(f.high[s])} · <span class="${t[2]}">${t[0]}</span></small></span></div>`;
   }).join('')}</div>
-    <p class="note" data-tip="Blends three measured paces: recent (last 1–3h), last day (6–24h) and the source's trailing 7-day total, weighted 25/35/40% (re-weighted when one is missing). The range uses the slowest and fastest of those paces for the ${dur(f.remainingHours * HOUR)} left. Weighted votes. Newsletter confirmations can double earlier votes at once and removals take votes away, so real totals can jump either way.">Blend of recent, daily and weekly pace · weighted votes</p>`;
+    <p class="note" data-tip="Momentum fades: the recent pace (last 1–3h) sets the next ${Math.round(f.nearHours)} hours, then a 45/55 blend of the last-day pace (6–24h) and the source's trailing 7-day pace covers the remaining ${dur(Math.max(0, f.remainingHours - f.nearHours) * HOUR)}. The range uses the slowest and fastest pace in each stretch, and is at least ±25% of the long-run pace (±50% while only one long-run pace exists), because daily voting swings a lot. Weighted votes. Newsletter confirmations can double earlier votes at once and removals take votes away, so real totals can jump either way.">Recent momentum, then daily + weekly pace · weighted votes</p>`;
 }
 
 // ---------------------------------------------------------------- earlier history

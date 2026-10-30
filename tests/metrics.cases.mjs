@@ -177,18 +177,6 @@ export const cases = [
     eq(M.gapToPosition(c, 'g', 6), { self: false, other: 'f', gap: -10, myRank: 7 });
   }],
 
-  ['projection needs an hour of history and uses observed pace only', () => {
-    const short = recs(['2026-10-29T13:30:00Z', '2026-10-29T14:00:00Z', { a: 10 }]);
-    eq(M.project(short, iso('2026-10-31T00:00:00Z')), null);
-    const r = recs(
-      ['2026-10-29T10:00:00Z', '2026-10-29T10:00:00Z', { a: 100, b: 100 }],
-      ['2026-10-29T14:00:00Z', '2026-10-29T14:00:00Z', { a: 140, b: 90 }]);
-    const p = M.project(r, iso('2026-10-30T00:00:00Z'));
-    eq(p.pacePerHour.a, 10);
-    eq(p.projected.a, 240);
-    eq(p.projected.b, 90);            // decreases never project downward
-  }],
-
   ['pace rises and falls with observed gains per hour', () => {
     const r = recs(
       ['2026-10-29T13:00:00Z', '2026-10-29T13:00:00Z', { a: 100 }],
@@ -198,7 +186,7 @@ export const cases = [
     eq(M.paceSeriesFor(r, 'a').map((p) => p.y), [20, 4, 0]);
   }],
 
-  ['forecast blends recent, day and week paces with renormalised weights', () => {
+  ['recent pace drives the next 3 hours, then the long-run pace takes over', () => {
     // 4h of snapshots: no 24h/12h/6h window yet, so only recent (3h) + week are used.
     const r = recs(
       ['2026-10-30T10:00:00Z', '2026-10-30T10:00:00Z', { a: 100 }],
@@ -206,12 +194,32 @@ export const cases = [
       ['2026-10-30T14:00:00Z', '2026-10-30T14:00:00Z', { a: 124 }]);   // 3h: +18 = 6/h
     const meta = { a: { source_week_votes: 336, source_week_votes_at: '2026-10-30T14:00:00Z', published_on: '2026-09-01' } }; // 2/h
     const f = M.forecast(r, iso('2026-10-31T00:00:00Z'), meta);   // 10h left
-    eq(f.parts.a.map((p) => [p.key, Math.round(p.rate * 100) / 100]), [['recent', 6], ['week', 2]]);
-    const central = 6 * (0.25 / 0.65) + 2 * (0.40 / 0.65);
-    ok(Math.abs(f.pacePerHour.a - central) < 1e-9, 'central pace');
-    eq([f.low.a, f.high.a], [124 + 2 * 10, 124 + 6 * 10]);
-    eq(f.projected.a, Math.round(124 + central * 10));
+    eq(f.parts.a.map((p) => [p.key, Math.round(p.rate * 100) / 100, p.use]), [['recent', 6, 'next 3h'], ['week', 2, 'then 100%']]);
+    eq(f.projected.a, 124 + 6 * 3 + 2 * 7);
+    // One long-run pace only, so its range is ±50%: 1/h to 3/h after the first 3 hours.
+    eq([f.low.a, f.high.a], [124 + 1 * 3 + 1 * 7, 124 + 6 * 3 + 3 * 7]);
     eq(f.trend.a, 'up');
+  }],
+
+  ['a short burst moves the forecast without being stretched to the close', () => {
+    const r = recs(
+      ['2026-10-30T13:00:00Z', '2026-10-30T13:00:00Z', { a: 200 }],
+      ['2026-10-30T14:00:00Z', '2026-10-30T14:00:00Z', { a: 230 }]);   // 30/h for one hour
+    const meta = { a: { source_week_votes: 336, source_week_votes_at: '2026-10-30T14:00:00Z' } };   // 2/h
+    const f = M.forecast(r, iso('2026-10-30T14:00:00Z') + 48 * 3600e3, meta);
+    eq(f.projected.a, 230 + 30 * 3 + 2 * 45);     // not 230 + 30 * 48
+    eq(f.trend.a, 'up');
+  }],
+
+  ['day and week paces are blended 45/55 for the long run', () => {
+    const r = [];
+    for (let h = 0; h <= 30; h++) r.push({ t: iso('2026-10-29T00:00:00Z') + h * 3600e3, u: iso('2026-10-29T00:00:00Z') + h * 3600e3, c: { a: 100 + 4 * h } });
+    const meta = { a: { source_week_votes: 336, source_week_votes_at: '2026-10-30T06:00:00Z' } };   // 2/h
+    const f = M.forecast(r, r[r.length - 1].u + 13 * 3600e3, meta);
+    eq(f.parts.a.map((p) => [p.key, p.rate, p.use]), [['recent', 4, 'next 3h'], ['day', 4, 'then 45%'], ['week', 2, 'then 55%']]);
+    const base = 4 * 0.45 + 2 * 0.55;
+    eq(f.projected.a, Math.round(220 + 4 * 3 + base * 10));
+    eq([f.low.a, f.high.a], [Math.round(220 + 2 * 3 + 2 * 10), Math.round(220 + 4 * 3 + 4 * 10)]);
   }],
 
   ['week pace for a new project uses only the days it existed', () => {
