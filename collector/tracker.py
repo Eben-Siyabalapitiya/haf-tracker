@@ -532,9 +532,12 @@ class Store:
     def record_success(self, result: ParseResult, now: datetime, heartbeat=HEARTBEAT) -> str:
         records = load_records(self.snapshots)
         outcome = merge_snapshot(records, now, result.counts, heartbeat)
-        if outcome == "unchanged":
+        full = result.strategy == "ballot-props"
+        if outcome == "unchanged" and not full:
             return outcome
-        dump_records(self.snapshots, records)
+        # A full page read refreshes the weekly figures and names even when no totals moved.
+        if outcome != "unchanged":
+            dump_records(self.snapshots, records)
         meta = update_projects(_read_json(self.projects, {}), result, now)
         _atomic_write(self.projects, json.dumps(meta, indent=1, ensure_ascii=False) + "\n")
         best = update_best_days(_read_json(self.best_days, {}), result, now)
@@ -544,6 +547,7 @@ class Store:
             "source_url": SOURCE_URL,
             "last_success": iso(now),
             "last_change": records[-1]["t"],
+            "last_snapshot": records[-1]["u"],
             "project_count": len(result.projects),
             "parser_strategy": result.strategy,
             "source_checked_at": result.source_checked_at,

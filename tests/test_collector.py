@@ -243,6 +243,25 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(len(lines), 1)
         self.assertEqual((lines[0]["t"], lines[0]["u"]), ("2026-10-29T14:00:00Z", "2026-10-29T14:20:00Z"))
 
+    def test_full_read_saves_weekly_figures_even_when_totals_are_unchanged(self):
+        self.store.record_success(self.result(), T0)
+        with open(self.store.projects, encoding="utf-8") as fh:
+            meta = json.load(fh)
+        meta["fuse-society-5b1e6b"]["source_week_votes_at"] = None      # as written by an older version
+        meta["fuse-society-5b1e6b"]["published_on"] = None
+        with open(self.store.projects, "w", encoding="utf-8") as fh:
+            json.dump(meta, fh)
+        mtime = os.path.getmtime(self.store.snapshots)
+        self.assertEqual(self.store.record_success(self.result(), T0 + timedelta(minutes=1)), "unchanged")
+        self.assertEqual(os.path.getmtime(self.store.snapshots), mtime)
+        with open(self.store.projects, encoding="utf-8") as fh:
+            fuse = json.load(fh)["fuse-society-5b1e6b"]
+        self.assertEqual(fuse["source_week_votes_at"], "2026-10-29T14:01:00Z")
+        self.assertEqual(fuse["published_on"], "2026-10-04")
+        with open(self.store.status, encoding="utf-8") as fh:
+            status = json.load(fh)
+        self.assertEqual((status["last_success"], status["last_snapshot"]), ("2026-10-29T14:01:00Z", "2026-10-29T14:00:00Z"))
+
     def test_changes_append_as_deltas_and_reload_fully(self):
         self.store.record_success(self.result(), T0)
         self.store.record_success(self.result(**{"hack-the-rex-7615bd": 1060}), T0 + timedelta(minutes=3))
