@@ -25,17 +25,22 @@ def main(argv=None) -> int:
     ap.add_argument("--html-file", help="parse this saved page instead of fetching")
     ap.add_argument("--heartbeat-minutes", type=float, default=tracker.HEARTBEAT.total_seconds() / 60)
     ap.add_argument("--fail-on-error", action="store_true", help="exit 1 if the source cannot be read")
+    ap.add_argument("--quick", action="store_true",
+                    help="read the small vote feed the page polls (falls back to the full page if needed)")
+    ap.add_argument("--stats-file", help="with --quick, parse this saved vote feed instead of fetching")
     args = ap.parse_args(argv)
 
     store = tracker.Store(os.path.normpath(args.data_dir))
     now = datetime.now(timezone.utc).replace(microsecond=0)   # collection time, used everywhere
     try:
-        if args.html_file:
-            with open(args.html_file, encoding="utf-8") as fh:
-                page = fh.read()
-        else:
-            page = tracker.fetch(args.url)
-        result = tracker.parse_page(page)
+        result = quick(args, store) if args.quick else None
+        if result is None:
+            if args.html_file:
+                with open(args.html_file, encoding="utf-8") as fh:
+                    page = fh.read()
+            else:
+                page = tracker.fetch(args.url)
+            result = tracker.parse_page(page)
         tracker.validate(result, store.active_slugs())
     except (tracker.FetchError, tracker.ParseError) as exc:
         wrote = store.record_failure(str(exc), now)
@@ -51,6 +56,23 @@ def main(argv=None) -> int:
     for i, p in enumerate(top, 1):
         print(f"  {i}. {p.title}: {p.count}")
     return 0
+
+
+def quick(args, store):
+    """Totals from the vote feed, or None when the full page should be read instead."""
+    known, cycle = store.known_projects(), store.cycle_id()
+    if not known or not (cycle or args.stats_file):
+        return None
+    try:
+        if args.stats_file:
+            with open(args.stats_file, encoding="utf-8") as fh:
+                text = fh.read()
+        else:
+            text = tracker.fetch_vote_stats(cycle)
+        return tracker.parse_vote_stats(text, known)
+    except (tracker.FetchError, tracker.ParseError) as exc:
+        print(f"Quick feed unusable ({exc}); reading the full page instead")
+        return None
 
 
 if __name__ == "__main__":

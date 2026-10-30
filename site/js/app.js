@@ -276,7 +276,7 @@ function renderStatus(d) {
   if (d) rows.push(['Projects', fmt(Object.keys(d.cur.counts).length)]);
   if (state.status.parser_strategy) rows.push(['Parser', esc(state.status.parser_strategy)]);
   if (err) rows.push(['Last error', `<span class="${errNewer ? 'err' : 'zero'}">${esc(err.message)}<br>${when(Date.parse(err.at))}</span>`]);
-  rows.push(['Schedule', 'GitHub Actions · every minute']);
+  rows.push(['Schedule', 'GitHub Actions · every 30 s']);
   $('system').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
 }
 

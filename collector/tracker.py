@@ -33,6 +33,7 @@ import re
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -53,6 +54,10 @@ ERROR_HEARTBEAT = timedelta(minutes=60)    # re-record an ongoing failure this o
 
 class ParseError(Exception):
     """The page could not be turned into a complete, consistent set of projects."""
+
+
+class NeedFullParse(ParseError):
+    """The quick vote feed lists something the full page has to explain (e.g. a new project)."""
 
 
 class FetchError(Exception):
@@ -77,6 +82,7 @@ class ParseResult:
     source_checked_at: str | None = None
     source_today: str | None = None
     warnings: list = field(default_factory=list)
+    cycle_id: str | None = None
 
     @property
     def counts(self) -> dict:
@@ -271,7 +277,8 @@ def parse_page(page_html: str) -> ParseResult:
                 best_day=lv.get("initialDay") if isinstance(lv.get("initialDay"), dict) else None,
                 week_votes=fx.get("weekVotes") if isinstance(fx.get("weekVotes"), int) else None,
             )
-        result = ParseResult(projects, "ballot-props", checked, props.get("today"), warnings)
+        cycle = props.get("cycleId") if isinstance(props.get("cycleId"), str) else None
+        result = ParseResult(projects, "ballot-props", checked, props.get("today"), warnings, cycle)
     elif live:
         titles = _titles_from_html(page_html)
         projects = {s: Project(slug=s, title=titles.get(s, ""), count=d["initialCount"],
@@ -299,6 +306,55 @@ def parse_page(page_html: str) -> ParseResult:
         result.projects[s].title = _humanize(s)
         warnings.append(f"no title for {s}; using slug")
     return result
+
+
+VOTE_STATS_URL = "https://schools.tks.world/high-agency-fund/api/vote-stats?cycle={cycle}"
+
+
+def parse_vote_stats(text: str, known: dict) -> ParseResult:
+    """Parse the small JSON feed the ballot page itself polls: {"counts", "days", "checkedAt"}.
+
+    It has totals but no names, so names come from ``known`` (projects.json). Any slug we
+    have never seen means the full page has to be read instead.
+    """
+    try:
+        data = json.loads(text, object_pairs_hook=_pairs_hook)
+    except json.JSONDecodeError as exc:
+        raise ParseError(f"vote feed is not JSON: {exc}") from exc
+    counts = data.get("counts") if isinstance(data, dict) else None
+    if not isinstance(counts, dict) or not counts:
+        raise ParseError("vote feed has no counts")
+    if getattr(counts, "conflicts", None):
+        raise ParseError(f"duplicate keys in vote feed: {counts.conflicts[:5]}")
+    for slug, n in counts.items():
+        _valid_count(slug, n)
+    unknown = sorted(set(counts) - set(known))
+    if unknown:
+        raise NeedFullParse(f"vote feed lists projects we have no names for: {unknown[:3]}")
+    days = data.get("days") if isinstance(data.get("days"), dict) else {}
+    projects = {}
+    for slug, n in counts.items():
+        k = known[slug]
+        projects[slug] = Project(
+            slug=slug, title=k.get("title") or _humanize(slug), count=n, school=k.get("school", ""),
+            interests=list(k.get("interests") or []),
+            best_day=days.get(slug) if isinstance(days.get(slug), dict) else k.get("source_best_day"),
+            week_votes=k.get("source_week_votes"),
+        )
+    return ParseResult(projects, "vote-feed", _ms_to_iso(data.get("checkedAt")))
+
+
+def fetch_vote_stats(cycle: str, timeout: int = 15) -> str:
+    url = VOTE_STATS_URL.format(cycle=urllib.parse.quote(cycle, safe=""))
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json",
+                                               "Cache-Control": "no-cache"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if resp.status != 200 or "json" not in resp.headers.get("Content-Type", ""):
+                raise FetchError(f"vote feed returned HTTP {resp.status}")
+            return resp.read().decode("utf-8", errors="replace")
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise FetchError(f"could not fetch vote feed: {exc}") from exc
 
 
 def validate(result: ParseResult, previous_active: set | None = None) -> None:
@@ -460,8 +516,16 @@ class Store:
             "warnings": result.warnings[:10],
             "consecutive_failures": 0,
         })
+        if result.cycle_id:
+            status["cycle_id"] = result.cycle_id
         _atomic_write(self.status, json.dumps(status, indent=1) + "\n")
         return outcome
+
+    def known_projects(self) -> dict:
+        return _read_json(self.projects, {})
+
+    def cycle_id(self) -> str | None:
+        return _read_json(self.status, {}).get("cycle_id")
 
     def record_failure(self, message: str, now: datetime) -> bool:
         """Note a failed run without touching snapshots. Returns True if status was written."""

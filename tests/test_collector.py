@@ -141,6 +141,56 @@ class ParseTests(unittest.TestCase):
         self.assertGreater(len(r.counts), 20)
 
 
+class VoteFeedTests(unittest.TestCase):
+    KNOWN = {s: {"title": t, "school": sc, "interests": [], "source_week_votes": 5} for s, t, sc, _ in PROJECTS}
+
+    def feed(self, counts, **extra):
+        return json.dumps({"counts": counts, "days": {}, "checkedAt": 1793328608236, **extra})
+
+    def test_parses_counts_with_known_names(self):
+        r = tracker.parse_vote_stats(self.feed({s: n + 1 for s, _, _, n in PROJECTS}), self.KNOWN)
+        self.assertEqual(r.strategy, "vote-feed")
+        self.assertEqual(r.counts["hack-the-rex-7615bd"], 1057)
+        self.assertEqual(r.projects["hack-the-rex-7615bd"].title, "Hack The Rex")
+
+    def test_unknown_project_needs_full_page(self):
+        counts = {s: n for s, _, _, n in PROJECTS} | {"brand-new-abc123": 4}
+        with self.assertRaises(tracker.NeedFullParse):
+            tracker.parse_vote_stats(self.feed(counts), self.KNOWN)
+
+    def test_malformed_feed_rejected(self):
+        for text in ["", "<html>", json.dumps({"counts": {}}), json.dumps({"counts": {"a-1": -2}}),
+                     '{"counts":{"hack-the-rex-7615bd":1,"hack-the-rex-7615bd":2}}']:
+            with self.assertRaises(tracker.ParseError, msg=text):
+                tracker.parse_vote_stats(text, self.KNOWN)
+
+    def test_quick_mode_end_to_end_and_fallback(self):
+        d = tempfile.mkdtemp()
+        try:
+            data = os.path.join(d, "data")
+            page = os.path.join(d, "page.html")
+            feed = os.path.join(d, "feed.json")
+            with open(page, "w", encoding="utf-8") as fh:
+                fh.write(make_page())
+            # No names known yet: --quick falls back to the full page.
+            self.assertEqual(collect.main(["--data-dir", data, "--html-file", page, "--quick", "--stats-file", feed]), 0)
+            # Pretend that collection happened a minute ago, as it would in the real loop.
+            snap = os.path.join(data, "snapshots.jsonl")
+            recs = tracker.load_records(snap)
+            earlier = tracker.iso(tracker.parse_iso(recs[0]["t"]) - timedelta(minutes=1))
+            recs[0].update(t=earlier, u=earlier)
+            tracker.dump_records(snap, recs)
+            with open(feed, "w", encoding="utf-8") as fh:
+                fh.write(self.feed({s: n + (5 if s.startswith("hack") else 0) for s, _, _, n in PROJECTS}))
+            self.assertEqual(collect.main(["--data-dir", data, "--html-file", page, "--quick", "--stats-file", feed]), 0)
+            recs = tracker.load_records(os.path.join(data, "snapshots.jsonl"))
+            self.assertEqual(recs[-1]["c"]["hack-the-rex-7615bd"], 1061)
+            with open(os.path.join(data, "status.json"), encoding="utf-8") as fh:
+                self.assertEqual(json.load(fh)["parser_strategy"], "vote-feed")
+        finally:
+            shutil.rmtree(d)
+
+
 class StorageTests(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()
