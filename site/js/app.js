@@ -227,8 +227,8 @@ function movers(d, n = 5) {
 
 function closestRivals(d, n = 4) {
   const i = d.order.indexOf(HL);
-  // No project picked: the race around the funding line.
-  if (i < 0) return d.order.slice(Math.max(0, FUNDED - 3), FUNDED + 3);
+  // No project picked: just the funded top 5.
+  if (i < 0) return d.order.slice(0, FUNDED);
   const picks = [HL];
   for (let k = 1; picks.length < n + 1 && k < d.order.length; k++) {
     if (d.order[i - k]) picks.push(d.order[i - k]);
@@ -436,7 +436,7 @@ function setTeam(slug) {
 
 function renderPicker(d) {
   $('pickName').textContent = HL && HL in d.cur.counts ? title(HL) : 'Pick yours';
-  $('nearBtn').textContent = HL ? 'Near you' : 'Funding race';
+  $('nearBtn').textContent = HL ? 'Near you' : `Top ${FUNDED}`;
   if ($('pickPop').hidden) return;
   const q = $('pickSearch').value.trim().toLowerCase();
   const items = d.order.filter((s) => !q || `${title(s)} ${school(s)}`.toLowerCase().includes(q)).slice(0, 80);
