@@ -4,7 +4,7 @@
 
 A live tracker for the [TKS High Agency Fund](https://schools.tks.world/high-agency-fund) ballot. Pick your project and follow the race: who's gaining, who's slowing down and who's likely to finish in the funded top 5.
 
-Made by [Eben Siyabalapitiya](https://ebensiyabalapitiya.site/) and [Vanesha Budhu](https://www.linkedin.com/in/vanesha-budhu/), the team behind [Hack The Rex](https://www.hacktherex.com/). Not affiliated with TKS.
+Made by [Eben Siyabalapitiya](https://www.linkedin.com/in/eben-siyabalapitiya/) and [Vanesha Budhu](https://www.linkedin.com/in/vanesha-budhu/), the team behind [Hack The Rex](https://www.hacktherex.com/). Not affiliated with TKS.
 
 - Leaderboard of every project with changes for today, 1h, 5h, 10h and 24h, plus rank movement
 - The race chart: each project's vote history with a faded projection line to the close
