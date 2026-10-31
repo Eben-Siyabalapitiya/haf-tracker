@@ -1328,6 +1328,42 @@ function renderClock(left) {
   }
 }
 
+// Sections fade and glide in once as they scroll into view; stat cards pop in one by one.
+// Positions are checked on scroll/resize (no observer needed), with a safety net so
+// nothing can ever stay hidden.
+function setupReveal() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  let pending = [...document.querySelectorAll('.hero-top, .stats, .col-main > .card, .col-side > .card, .foot-grid, .made, .foot-line')];
+  pending.forEach((el) => {
+    el.classList.add('reveal');
+    const side = el.parentElement?.classList.contains('col-side');
+    const i = [...el.parentElement.children].indexOf(el);
+    el.style.setProperty('--d', `${side ? 120 + i * 60 : Math.min(i, 3) * 40}ms`);
+  });
+  document.documentElement.classList.add('reveal-ready');
+  const show = (el) => {
+    el.classList.add('in');
+    if (el.classList.contains('stats')) {
+      el.classList.add('popping');
+      setTimeout(() => el.classList.remove('popping'), 1100);   // later live updates don't re-animate
+    }
+  };
+  const check = () => {
+    const limit = window.innerHeight * 0.94;
+    pending = pending.filter((el) => {
+      if (el.getBoundingClientRect().top < limit) { show(el); return false; }
+      return true;
+    });
+    if (!pending.length) { window.removeEventListener('scroll', check); window.removeEventListener('resize', check); }
+  };
+  window.addEventListener('scroll', check, { passive: true });
+  window.addEventListener('resize', check);
+  check();
+  setTimeout(check, 300);
+  // Safety net: if anything is still waiting after a while (e.g. odd browsers), show it.
+  setTimeout(() => { pending.forEach(show); pending = []; }, 6000);
+}
+
 function tick() {
   renderClock(CLOSE - Date.now());
   const np = document.getElementById('nextPoll');
@@ -1339,6 +1375,7 @@ function tick() {
 
 HL = initialTeam();
 bind();
+setupReveal();
 poll();
 // Re-measure chart labels once the web fonts have loaded.
 Promise.all(['500 11px "IBM Plex Sans"', '600 11px "IBM Plex Sans"', '400 10.5px "IBM Plex Mono"'].map((f) => document.fonts?.load(f)))
