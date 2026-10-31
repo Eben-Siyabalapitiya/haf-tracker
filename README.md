@@ -83,6 +83,10 @@ After that, everything runs by itself and stops after voting closes. To stop it 
 
 Settings live in `site/config.js` (tracked project, close time, refresh interval, stale threshold).
 
+### Hosting on Vercel
+
+`vercel.json` is set up for it: the build runs `python3 scripts/build_site.py` and serves `_site`. Commits that only change `data/` are skipped (`ignoreCommand`), so the collector's constant data commits don't use up deploys; the page reads fresh data straight from this repository (`repo` in `site/config.js`).
+
 ## Run it locally
 
 Requires Python 3.9+.
