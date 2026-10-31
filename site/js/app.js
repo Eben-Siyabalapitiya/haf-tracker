@@ -219,7 +219,6 @@ function render() {
   renderStatus(d);
   if (!d) { renderEmpty(); return; }
   const f = getForecast(d);
-  renderTicker(d, f);
   renderHero(d);
   renderChart(d);
   renderMarket(d, f);
@@ -901,22 +900,6 @@ function spark(points, color, w = 84, h = 22) {
   return `<svg class="spark" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true"><path d="${path}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round"/><circle cx="${px(last.x).toFixed(1)}" cy="${py(last.y).toFixed(1)}" r="2.2" fill="${color}"/></svg>`;
 }
 const LEVEL_COLOR = { surging: '#ff5147', heating: '#ff9a3d', steady: '#a39e96', cooling: '#6fb6ff', stalled: '#75716b' };
-
-function renderTicker(d, f) {
-  const el = $('tickerTrack');
-  if (!el) return;
-  const base = d.bases['1h'] || { counts: d.records[0].c };
-  let slugs = d.order.slice(0, 15);
-  if (!slugs.includes(HL)) slugs = [HL, ...slugs];
-  const items = slugs.map((s) => {
-    const lvl = M.momentum(d.records, f, s).level;
-    const ch = s in base.counts ? d.cur.counts[s] - base.counts[s] : null;
-    const pct = ch != null && base.counts[s] ? (ch / base.counts[s]) * 100 : null;
-    return `<span class="tk ${lvl} ${s === HL ? 'rex' : ''}"><b>${d.ranks[s]}</b>${esc(shortLabel(title(s)).toUpperCase())}<em>${fmt(d.cur.counts[s])}</em>${ch == null ? '' : `<i>${LEVEL[lvl].arrow} ${signed(ch)}${pct != null ? ` ${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%` : ''}</i>`}</span>`;
-  }).join('');
-  const label = d.bases['1h'] ? 'last hour' : 'since tracking began';
-  el.innerHTML = `<div class="tk-group"><span class="tk-label">${label}</span>${items}</div><div class="tk-group" aria-hidden="true"><span class="tk-label">${label}</span>${items}</div>`;
-}
 
 function renderMarket(d, f) {
   const el = $('market');
