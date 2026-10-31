@@ -24,6 +24,7 @@
   <link rel="stylesheet" href="css/style.css">
   <script src="config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js" defer></script>
   <script type="module" src="js/app.js"></script>
 </head>
 <body>
@@ -59,7 +60,7 @@
             </button>
             <div class="pick-pop" id="pickPop" hidden>
               <input id="pickSearch" type="search" placeholder="Search by project or school" autocomplete="off" aria-label="Search projects">
-              <ul id="pickList" role="listbox" aria-label="Projects"></ul>
+              <ul id="pickList" data-lenis-prevent role="listbox" aria-label="Projects"></ul>
             </div>
           </div>
           <p class="made-top">Made by <a class="ext" href="https://www.linkedin.com/in/eben-siyabalapitiya/" target="_blank" rel="noopener">Eben Siyabalapitiya</a> &amp; <a class="ext" href="https://www.linkedin.com/in/vanesha-budhu/" target="_blank" rel="noopener">Vanesha Budhu</a>, the team behind <a class="ext" href="https://www.hacktherex.com/" target="_blank" rel="noopener">Hack The Rex</a>. Not affiliated with TKS.</p>
@@ -92,7 +93,7 @@
             <div class="chips" id="chips"></div>
             <div class="pick-pop add-pop" id="addPop" hidden>
               <input id="addSearch" type="search" placeholder="Add a team to the chart" autocomplete="off" aria-label="Search teams to add">
-              <ul id="addList" role="listbox" aria-label="Teams"></ul>
+              <ul id="addList" data-lenis-prevent role="listbox" aria-label="Teams"></ul>
             </div>
             <div class="chip-tools">
               <div class="seg small" id="showSeg" aria-label="Projects shown">
@@ -142,7 +143,7 @@
               </label>
             </div>
           </div>
-          <div class="table-wrap">
+          <div class="table-wrap" data-lenis-prevent-horizontal>
             <table class="board">
               <thead><tr>
                 <th data-sort="rank" class="num sticky-a">#</th>
@@ -180,7 +181,7 @@
           <div class="seg small wide" id="feedSeg">
             <button data-feed="all" aria-pressed="true">All</button><button data-feed="rex">Yours</button><button data-feed="top">Top 10</button><button data-feed="alerts">Alerts</button>
           </div>
-          <ol class="feed" id="feed"></ol>
+          <ol class="feed" id="feed" data-lenis-prevent></ol>
         </section>
 
         <section class="card" aria-labelledby="projTitle">

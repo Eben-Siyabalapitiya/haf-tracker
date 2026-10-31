@@ -1214,7 +1214,7 @@ function bind() {
     const opening = !state.boardOpen;
     state.boardOpen = opening;
     const d = derive(); if (d) renderBoard(d);
-    if (!opening) $('board').scrollIntoView({ block: 'start', behavior: 'smooth' });
+    if (!opening) (window.__lenis ? window.__lenis.scrollTo($('board'), { offset: -70 }) : $('board').scrollIntoView({ block: 'start', behavior: 'smooth' }));
   });
   $('chips').addEventListener('click', (e) => { if (e.target.closest('#addChip')) { e.stopPropagation(); $('addPop').hidden ? openAdd() : closeAdd(); } });
   $('addSearch').addEventListener('input', renderAddList);
@@ -1364,6 +1364,26 @@ function setupReveal() {
   setTimeout(() => { pending.forEach(show); pending = []; }, 6000);
 }
 
+// Slow, gliding wheel scroll (Lenis). Touch scrolling stays native; skipped for reduce motion.
+function setupSmoothScroll() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const start = () => {
+    if (!window.Lenis) return;
+    const lenis = new window.Lenis({ lerp: 0.07, wheelMultiplier: 0.9, smoothWheel: true });
+    const raf = (t) => { lenis.raf(t); requestAnimationFrame(raf); };
+    requestAnimationFrame(raf);
+    // In-page links (e.g. "Skip to leaderboard") glide too.
+    document.addEventListener('click', (e) => {
+      const a = e.target.closest('a[href^="#"]');
+      if (!a || a.getAttribute('href').length < 2) return;
+      const target = document.querySelector(a.getAttribute('href'));
+      if (target) { e.preventDefault(); lenis.scrollTo(target, { offset: -70 }); }
+    });
+    window.__lenis = lenis;
+  };
+  if (window.Lenis) start(); else window.addEventListener('load', start, { once: true });
+}
+
 function tick() {
   renderClock(CLOSE - Date.now());
   const np = document.getElementById('nextPoll');
@@ -1376,6 +1396,7 @@ function tick() {
 HL = initialTeam();
 bind();
 setupReveal();
+setupSmoothScroll();
 poll();
 // Re-measure chart labels once the web fonts have loaded.
 Promise.all(['500 11px "IBM Plex Sans"', '600 11px "IBM Plex Sans"', '400 10.5px "IBM Plex Mono"'].map((f) => document.fonts?.load(f)))
