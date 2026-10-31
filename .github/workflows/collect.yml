@@ -8,7 +8,7 @@ on:
       minutes:
         description: "How long this run keeps collecting (minutes)"
         default: "330"
-  # Restart right away when the collector itself changes.
+  # Restart right away when the collector itself changes (this also cancels the running one).
   push:
     branches: [main]
     paths:
