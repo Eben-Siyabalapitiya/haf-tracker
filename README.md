@@ -1,14 +1,16 @@
-# Hack The Rex vote tracker
+# Ballot Watch
 
 **Live dashboard: https://eben-siyabalapitiya.github.io/hack-the-rex-votes/**
 
-A live-ish dashboard for the [TKS High Agency Fund](https://schools.tks.world/high-agency-fund) ballot, built to follow **Hack The Rex** (North Albion CI) and everyone it's racing against.
+A live tracker for the [TKS High Agency Fund](https://schools.tks.world/high-agency-fund) ballot. Pick your project and follow the race: who's gaining, who's slowing down and who's likely to finish in the funded top 5.
+
+Made by [Eben Siyabalapitiya](https://ebensiyabalapitiya.site/) and [Vanesha Budhu](https://www.linkedin.com/in/vanesha-budhu/), the team behind [Hack The Rex](https://www.hacktherex.com/). Not affiliated with TKS.
 
 - Leaderboard of every project with changes for today, 1h, 5h, 10h and 24h, plus rank movement
 - The race chart: each project's vote history with a faded projection line to the close
 - Rank chart showing who passed who, and a momentum view of the biggest recent gains
 - Live feed of updates (gains, overtakes, crossing the top-5 funding line, decreases)
-- Lead over #2 and cushion over #6 (the first unfunded spot)
+- Pick your project to see its rank, gap to the next place, cushion over the funding line and predicted finish (or share a link with `?team=<slug>`)
 
 Everything runs on GitHub for free: a scheduled Actions job collects the data and GitHub Pages hosts the site. No server, no API keys.
 
@@ -31,8 +33,8 @@ The page is a Next.js app. Its embedded data holds a `voteCounts` map (slug → 
 
 The page also exposes two historical fields, checked on 2026-10-30:
 
-- **`initialDay`** — each project's single best day (`{votes, date}`), shown as "Best day: +N". It matches the `days` field of the vote feed, is missing only for projects with 0 votes, never exceeds the total, and is dated between the publish date and the server's `today` (a Toronto date). It's one dated fact per project, not a daily series. Every new value is logged in `data/source_best_days.json`.
-- **`weekVotes`** — a trailing ~7-day total. Across Toronto midnight it fell for some projects whose totals were flat or rising (old votes leaving the window), and for projects published in the last 7 days it equals their total. The exact window boundary isn't documented.
+- **`initialDay`**: each project's single best day (`{votes, date}`), shown as "Best day: +N". It matches the `days` field of the vote feed, is missing only for projects with 0 votes, never exceeds the total, and is dated between the publish date and the server's `today` (a Toronto date). It's one dated fact per project, not a daily series. Every new value is logged in `data/source_best_days.json`.
+- **`weekVotes`**: a trailing ~7-day total. Across Toronto midnight it fell for some projects whose totals were flat or rising (old votes leaving the window), and for projects published in the last 7 days it equals their total. The exact window boundary isn't documented.
 
 The change columns only ever use our own snapshots. `weekVotes` feeds the long-term pace in predictions.
 
@@ -66,7 +68,7 @@ Unchanged totals don't create a new line; they extend `u` at most every 5 minute
 
 When a project is removed from the ballot or a project's total goes down (votes removed), you hear about it three ways:
 
-- **On the dashboard:** a pop-up for every removal and drop (any project), plus a banner for 24 hours and an entry in the live feed. Hack The Rex moves and funding-line crossings pop up too.
+- **On the dashboard:** a pop-up for every removal and drop (any project), plus a banner for 24 hours and an entry in the live feed. Funding-line crossings and your project's moves pop up too.
 - **Browser notifications:** press **Alerts** (the bell) and allow notifications. They also arrive while the dashboard is in a background tab. On iPhone, add the page to your home screen first.
 - **With nothing open:** the collector posts each batch (at most every 5 minutes) to an issue called **Vote alerts** in this repository. GitHub emails you about it and, with the GitHub mobile app, sends a push notification. If you don't get them, check that you're watching the repository (Watch → All activity) or subscribe to the issue.
 
