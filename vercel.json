@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "python3 scripts/build_site.py",
+  "outputDirectory": "_site",
+  "installCommand": "",
+  "framework": null,
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':(exclude)data'",
+  "headers": [
+    { "source": "/data/(.*)", "headers": [{ "key": "Cache-Control", "value": "no-store" }] }
+  ]
+}

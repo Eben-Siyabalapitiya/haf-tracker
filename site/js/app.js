@@ -12,6 +12,7 @@ const HOUR = 3600e3;
 const PALETTE = ['#f07b3f', '#4fc3c8', '#a98bf5', '#f2709c', '#6fa8ff', '#b5d65a', '#e0b07a', '#ff5d5d'];
 const REX = '#ffd23f';
 const MAX_SEL = 10;
+const BOARD_FOLD = 8;
 const $ = (id) => document.getElementById(id);
 
 // ------------------------------------------------------------------ state
@@ -812,9 +813,18 @@ function renderBoard(d) {
     else th.removeAttribute('aria-sort');
   }
   const showCut = key === 'rank' && dir > 0 && !q;
+  // Fold the full list to the top rows; your project stays visible even when folded.
+  const folds = !q && !state.limit && list.length > BOARD_FOLD;
+  const full = list;
+  if (folds && !state.boardOpen) {
+    const mine = list.slice(BOARD_FOLD).find((r) => r.slug === HL);
+    list = list.slice(0, BOARD_FOLD);
+    if (mine) list.push({ ...mine, gapBefore: true });
+  }
   const html = [];
   list.forEach((r, i) => {
     const next = list[i + 1];
+    if (r.gapBefore) html.push('<tr class="gaprow"><td colspan="10">⋯</td></tr>');
     const isCut = showCut && r.rank <= FUNDED && (!next || next.rank > FUNDED);
     const on = sel.includes(r.slug);
     const winOf = (k) => M.WINDOWS.find((w) => w.key === k);
@@ -831,6 +841,9 @@ function renderBoard(d) {
     </tr>`);
     if (isCut && next) html.push(`<tr class="cutlabel"><td colspan="10">Funding line · top ${FUNDED} are funded</td></tr>`);
   });
+  if (folds) {
+    html.push(`<tr class="morerow"><td colspan="10"><button type="button" id="boardMore">${state.boardOpen ? 'Show less' : `Show all ${full.length} projects`}</button></td></tr>`);
+  }
   $('rows').innerHTML = html.join('') || '<tr><td colspan="10" class="zero">No projects match.</td></tr>';
 }
 
@@ -1192,6 +1205,13 @@ function setPref(k, v) { state[k] = v; store.set(k, v); render(); }
 function bind() {
   $('refreshBtn').addEventListener('click', () => { state.loadedKey = null; poll(); });
   $('pickBtn').addEventListener('click', () => ($('pickPop').hidden ? openPicker() : closePicker()));
+  $('rows').addEventListener('click', (e) => {
+    if (!e.target.closest('#boardMore')) return;
+    const opening = !state.boardOpen;
+    state.boardOpen = opening;
+    const d = derive(); if (d) renderBoard(d);
+    if (!opening) $('board').scrollIntoView({ block: 'start', behavior: 'smooth' });
+  });
   $('chips').addEventListener('click', (e) => { if (e.target.closest('#addChip')) { e.stopPropagation(); $('addPop').hidden ? openAdd() : closeAdd(); } });
   $('addSearch').addEventListener('input', renderAddList);
   $('addSearch').addEventListener('keydown', (e) => {

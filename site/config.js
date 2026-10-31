@@ -6,7 +6,7 @@ window.TRACKER_CONFIG = {
   fundedSpots: 5,
   refreshSeconds: 20,          // how often this page checks for new snapshots
   staleAfterMinutes: 15,       // flag data as stale after this long without a successful collection
-  // Where to read fresh data between site deploys. Auto-detected on USERNAME.github.io/REPO;
-  // set explicitly if you use a custom domain, e.g. { owner: 'you', name: 'repo', branch: 'main' }.
-  repo: null,
+  // Where to read fresh vote data between deploys (the GitHub repo the collector writes to).
+  // Needed on Vercel or a custom domain; on USERNAME.github.io/REPO it is detected automatically.
+  repo: { owner: 'Eben-Siyabalapitiya', name: 'hack-the-rex-votes', branch: 'main' },
 };
