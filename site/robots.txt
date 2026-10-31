@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://haf-tracker.vercel.app/sitemap.xml
