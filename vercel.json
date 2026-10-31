@@ -4,7 +4,7 @@
   "outputDirectory": "_site",
   "installCommand": "",
   "framework": null,
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':(exclude)data'",
+  "ignoreCommand": "bash scripts/vercel_ignore.sh",
   "headers": [
     { "source": "/data/(.*)", "headers": [{ "key": "Cache-Control", "value": "no-store" }] }
   ]
