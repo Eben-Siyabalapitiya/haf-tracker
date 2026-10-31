@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hack The Rex · Vote Tracker</title>
-  <meta name="description" content="Leaderboard and vote momentum for the TKS High Agency Fund ballot, tracking Hack The Rex.">
+  <title>Ballot Watch · TKS High Agency Fund</title>
+  <meta name="description" content="Live leaderboard, momentum and predictions for the TKS High Agency Fund ballot. Pick your project and follow the race.">
   <meta name="theme-color" content="#0b0a09">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0a09'/%3E%3Cpath d='M8 23 L14 15 L18 19 L24 9' stroke='%23e8762c' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
   <script src="config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
@@ -20,9 +20,9 @@
 
   <header class="topbar">
     <div class="wrap topbar-inner">
-      <div class="brand"><svg class="brand-mark" viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#1c1a17"/><path d="M7 22 L13 15 L18 19 L25 9" stroke="#ffd23f" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="brand-name">Rex Tracker</span></div>
+      <div class="brand"><svg class="brand-mark" viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#1c1a17"/><path d="M7 22 L13 15 L18 19 L25 9" stroke="#ffd23f" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="brand-name">Ballot Watch</span></div>
       <div class="topbar-actions">
-        <span class="pill" id="statusPill" data-state="loading"><span class="dot"></span><span id="statusText">Loading</span></span>
+        <span class="pill" id="statusPill" data-state="loading"><span id="statusText">Loading</span><i class="sync" id="syncBar" aria-hidden="true"></i></span>
         <button class="btn bell" id="bellBtn" type="button" aria-pressed="false" aria-label="Turn vote alerts on or off">
           <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <span>Alerts</span>
@@ -39,10 +39,20 @@
     <section class="hero">
       <div class="hero-top">
         <div>
-          <p class="label">TKS High Agency Fund · live vote tracker</p>
-          <h1 class="title" id="heroTitle">Hack The Rex</h1>
+          <p class="label" id="heroLabel">TKS High Agency Fund</p>
+          <h1 class="title" id="heroTitle">Who gets funded?</h1>
+          <div class="picker" id="picker">
+            <button class="pick-btn" id="pickBtn" type="button" aria-haspopup="listbox" aria-expanded="false">
+              <span class="pick-k">Your project</span><b id="pickName">Pick yours</b>
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div class="pick-pop" id="pickPop" hidden>
+              <input id="pickSearch" type="search" placeholder="Search by project or school" autocomplete="off" aria-label="Search projects">
+              <ul id="pickList" role="listbox" aria-label="Projects"></ul>
+            </div>
+          </div>
         </div>
-        <div class="countdown"><span class="label">Voting closes in</span><span id="countdown">—</span></div>
+        <div class="countdown"><span class="label">Voting closes in</span><div id="countdown"></div><span class="close-at">Oct 31 · 11:59 PM ET</span></div>
       </div>
       <div class="stats" id="stats" aria-live="polite"></div>
       <div class="banner" id="banner" hidden></div>
@@ -53,7 +63,7 @@
         <section class="card" aria-labelledby="chartsTitle">
           <div class="card-head">
             <div>
-              <p class="label">Who is moving where</p>
+              <p class="label">Live race</p>
               <h2 id="chartsTitle">The race</h2>
             </div>
             <div class="seg" role="tablist" id="chartTabs">
@@ -68,9 +78,13 @@
               <button data-range="6">6H</button><button data-range="24">24H</button><button data-range="72">3D</button><button data-range="0" aria-pressed="true">All</button>
             </div>
             <div class="chips" id="chips"></div>
+            <div class="pick-pop add-pop" id="addPop" hidden>
+              <input id="addSearch" type="search" placeholder="Add a team to the chart" autocomplete="off" aria-label="Search teams to add">
+              <ul id="addList" role="listbox" aria-label="Teams"></ul>
+            </div>
             <div class="chip-tools">
               <div class="seg small" id="showSeg" aria-label="Projects shown">
-                <button type="button" data-show="rivals">Rivals</button><button type="button" data-show="top10">Top 10</button><button type="button" data-show="movers">Movers</button>
+                <button type="button" data-show="rivals" id="nearBtn">Near you</button><button type="button" data-show="top10">Top 10</button><button type="button" data-show="movers">Movers</button>
               </div>
               <button class="switch" id="projToggle" type="button" role="switch" aria-checked="true"><i></i><span>Predictions</span></button>
             </div>
@@ -82,7 +96,7 @@
         <section class="card" aria-labelledby="mkTitle">
           <div class="card-head">
             <div>
-              <p class="label">Who's hot, who's not</p>
+              <p class="label">Votes per time block</p>
               <h2 id="mkTitle">Vote Heat</h2>
             </div>
           </div>
@@ -135,20 +149,11 @@
           </div>
         </section>
 
-        <section class="card" aria-labelledby="histTitle">
-          <div class="card-head">
-            <div>
-              <p class="label">Before tracking began</p>
-              <h2 id="histTitle">Earlier history</h2>
-            </div>
-          </div>
-          <div id="history"></div>
-        </section>
       </div>
 
       <aside class="col-side">
         <section class="card sig-card" aria-labelledby="sigTitle">
-          <p class="label">Read of the race</p>
+          <p class="label">What to watch</p>
           <h2 id="sigTitle">Signals</h2>
           <ol class="signals" id="signals"></ol>
         </section>
@@ -156,25 +161,25 @@
         <section class="card feed-card" aria-labelledby="feedTitle">
           <div class="card-head tight">
             <div>
-              <p class="label"><span class="live-dot"></span>&nbsp;Recent updates</p>
+              <p class="label">Recent updates</p>
               <h2 id="feedTitle">Live feed</h2>
             </div>
           </div>
           <div class="seg small wide" id="feedSeg">
-            <button data-feed="all" aria-pressed="true">All</button><button data-feed="rex">Rex</button><button data-feed="top">Top 10</button><button data-feed="alerts">Alerts</button>
+            <button data-feed="all" aria-pressed="true">All</button><button data-feed="rex">Yours</button><button data-feed="top">Top 10</button><button data-feed="alerts">Alerts</button>
           </div>
           <ol class="feed" id="feed"></ol>
         </section>
 
         <section class="card" aria-labelledby="projTitle">
-          <p class="label">Projection</p>
-          <h2 id="projTitle">If the current pace holds</h2>
+          <p class="label">Prediction</p>
+          <h2 id="projTitle">At the close</h2>
           <div id="projection"></div>
         </section>
 
         <section class="card" aria-labelledby="sysTitle">
-          <p class="label">System</p>
-          <h2 id="sysTitle">Collector status</h2>
+          <p class="label">Data</p>
+          <h2 id="sysTitle">Status</h2>
           <dl class="sys" id="system"></dl>
         </section>
       </aside>
@@ -183,19 +188,29 @@
     <footer class="foot">
       <div class="foot-grid">
         <div>
-          <p class="label">About the numbers</p>
-          <p>Totals are the <strong>weighted votes</strong> shown on the public ballot. Newsletter-confirmed votes can count double, so they are not a count of unique voters. Every change here is the difference between two observed totals, not proof of how many people voted.</p>
+          <p class="label">The numbers</p>
+          <p>Totals are the weighted votes shown on the ballot. Newsletter votes can count double, so they are not unique voters.</p>
         </div>
         <div>
-          <p class="label">How it updates</p>
-          <p>A GitHub Actions job checks the vote totals every 30 seconds and stores every change. This page checks for new data every 20 seconds, so new votes usually appear within 1–2 minutes. It is frequently updated, not second-by-second live.</p>
+          <p class="label">Updates</p>
+          <p>Votes are checked every 30 seconds. This page refreshes every 20 seconds, so changes show up within a minute or two.</p>
         </div>
         <div>
-          <p class="label">Comparison windows</p>
-          <p id="tolText">1h ±20 min · 5h ±45 min · 10h ±60 min · 24h ±90 min · today: Toronto midnight ±45 min. Without a collection in that range the cell shows “Collecting history”.</p>
+          <p class="label">Predictions</p>
+          <p>Based on each project's recent, daily and weekly pace. A rough guide, not a promise.</p>
         </div>
       </div>
-      <p class="fine">Source: <a id="sourceLink" href="https://schools.tks.world/high-agency-fund" target="_blank" rel="noopener">schools.tks.world/high-agency-fund</a> · Unofficial tracker, not affiliated with TKS. Times shown in Toronto time.</p>
+      <div class="made">
+        <div class="made-by">
+          <span class="made-k">Made by</span>
+          <a href="https://ebensiyabalapitiya.site/" target="_blank" rel="noopener">Eben Siyabalapitiya</a>
+          <span class="amp">&amp;</span>
+          <a href="https://www.linkedin.com/in/vanesha-budhu/" target="_blank" rel="noopener">Vanesha Budhu</a>
+        </div>
+        <a class="stamp" href="https://www.hacktherex.com/" target="_blank" rel="noopener"><span>the team behind</span><b>HACK THE REX</b></a>
+        <p class="made-note">Not affiliated with TKS. Built so every team can follow the vote.</p>
+      </div>
+      <p class="fine">Data from <a id="sourceLink" href="https://schools.tks.world/high-agency-fund" target="_blank" rel="noopener">schools.tks.world/high-agency-fund</a>. Times are Toronto time.</p>
     </footer>
   </main>
 

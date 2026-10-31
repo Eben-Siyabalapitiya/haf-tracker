@@ -1,16 +1,17 @@
 import * as M from './metrics.js';
 
 const CFG = {
-  highlightSlug: 'hack-the-rex-7615bd', sourceUrl: 'https://schools.tks.world/high-agency-fund',
+  defaultTeam: null, sourceUrl: 'https://schools.tks.world/high-agency-fund',
   votingClosesAt: '2026-11-01T03:59:00Z', fundedSpots: 5, refreshSeconds: 20, staleAfterMinutes: 15, repo: null,
   ...(window.TRACKER_CONFIG || {}),
 };
-const HL = CFG.highlightSlug;
+let HL = null;   // the project this visitor follows (null = whole race)
 const CLOSE = Date.parse(CFG.votingClosesAt);
 const FUNDED = CFG.fundedSpots;
 const HOUR = 3600e3;
 const PALETTE = ['#f07b3f', '#4fc3c8', '#a98bf5', '#f2709c', '#6fa8ff', '#b5d65a', '#e0b07a', '#ff5d5d'];
 const REX = '#ffd23f';
+const MAX_SEL = 10;
 const $ = (id) => document.getElementById(id);
 
 // ------------------------------------------------------------------ state
@@ -19,6 +20,12 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem('htr:' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem('htr:' + k, JSON.stringify(v)); } catch { /* private mode */ } },
 };
+
+function initialTeam() {
+  const fromUrl = new URLSearchParams(location.search).get('team');
+  if (fromUrl) return fromUrl;
+  return store.get('team', CFG.defaultTeam || null);
+}
 
 const state = {
   records: [], projects: {}, status: {}, loadedKey: null, source: null,
@@ -185,7 +192,7 @@ function selection(d) {
   return closestRivals(d);
 }
 
-/** Hack The Rex plus whoever gained the most recently (last 5h, or all history if shorter). */
+/** Your project plus whoever gained the most recently (last 5h, or all history if shorter). */
 function movers(d, n = 5) {
   const base = d.bases['5h'] || { time: d.first, counts: d.records[0].c };
   const gains = d.order.map((slug) => ({ slug, ch: M.changeFor(d.records, slug, base, d.cur) }))
@@ -196,7 +203,8 @@ function movers(d, n = 5) {
 
 function closestRivals(d, n = 4) {
   const i = d.order.indexOf(HL);
-  if (i < 0) return d.order.slice(0, 5);
+  // No project picked: the race around the funding line.
+  if (i < 0) return d.order.slice(Math.max(0, FUNDED - 3), FUNDED + 3);
   const picks = [HL];
   for (let k = 1; picks.length < n + 1 && k < d.order.length; k++) {
     if (d.order[i - k]) picks.push(d.order[i - k]);
@@ -227,8 +235,7 @@ function render() {
   renderBoard(d);
   renderFeed(d);
   renderProjection(d);
-  renderHistory(d);
-  loadHistory();
+  renderPicker(d);
 }
 
 function renderEmpty() {
@@ -249,11 +256,11 @@ function renderStatus(d) {
   const errNewer = err && Date.parse(err.at) > Date.parse(state.status.last_success || 0);
   let st, label, bannerText = '', bannerCls = '';
   if (!d) { st = state.pollError ? 'error' : 'loading'; label = state.pollError ? 'No data' : 'Loading'; }
-  else if (state.pollError) { st = 'error'; label = 'Offline · retrying'; bannerText = `This page could not reach the tracker data (${esc(state.pollError)}). Showing the last data it loaded.`; }
-  else if (errNewer) { st = 'error'; label = `Source error · ${ago(ok)}`; bannerText = `The last collection attempt failed (${esc(err.message)}, ${when(Date.parse(err.at))}). Showing the last valid data from ${when(ok)}.`; }
-  else if (now - ok > CFG.staleAfterMinutes * 60e3) { st = 'stale'; label = `Stale · ${ago(ok)}`; bannerCls = 'warn'; bannerText = `No successful collection since ${when(ok)}. GitHub can delay scheduled runs; the numbers below may be behind the live ballot.`; }
+  else if (state.pollError) { st = 'error'; label = 'Offline · retrying'; bannerText = `Can't reach the data right now. Showing the last update.`; }
+  else if (errNewer) { st = 'error'; label = `Source error · ${ago(ok)}`; bannerText = `The ballot didn't respond at ${when(Date.parse(err.at))}. Showing data from ${when(ok)}.`; }
+  else if (now - ok > CFG.staleAfterMinutes * 60e3) { st = 'stale'; label = `Stale · ${ago(ok)}`; bannerCls = 'warn'; bannerText = `No update since ${when(ok)}. Numbers may be behind.`; }
   else if (now > CLOSE) { st = 'closed'; label = 'Voting closed'; }
-  else { st = 'live'; label = `Live · ${ago(ok)}`; }
+  else { st = 'live'; label = `Synced ${ago(ok)}`; }
   pill.dataset.state = st;
   text.textContent = label;
 
@@ -262,9 +269,9 @@ function renderStatus(d) {
     const recent = M.buildEvents(d.records).filter((e) => (e.kind === 'decrease' || e.kind === 'removed') && now - e.at < 24 * HOUR);
     if (recent.length) {
       bannerCls = 'warn';
-      bannerText = 'Vote decrease observed in the last 24h: ' + recent.slice(0, 3).map((e) => e.kind === 'removed'
-        ? `${esc(title(e.slug))} no longer listed (${when(e.at)})`
-        : `${esc(title(e.slug))} ${signed(e.delta)} (${when(e.at)})`).join(' · ') + '. Corrections or removals on the source can cause this.';
+      bannerText = 'Votes removed in the last 24h: ' + recent.slice(0, 3).map((e) => e.kind === 'removed'
+        ? `${esc(title(e.slug))} left the ballot (${when(e.at)})`
+        : `${esc(title(e.slug))} ${signed(e.delta)} (${when(e.at)})`).join(' · ');
     }
   }
   banner.hidden = !bannerText;
@@ -276,7 +283,7 @@ function renderStatus(d) {
   rows.push(['Status', `<span class="${st === 'error' ? 'down' : st === 'stale' ? '' : 'up'}">${esc(label)}</span>`]);
   if (d) rows.push(['Last collection', `${when(ok)}<br><span class="zero">${ago(ok)}</span>`]);
   if (state.status.source_checked_at) rows.push(['Source clock', when(Date.parse(state.status.source_checked_at))]);
-  rows.push(['Page checked', state.lastPoll ? `${ago(state.lastPoll)} · next in <span id="nextPoll">${nextPollIn()}</span>s` : '—']);
+  rows.push(['Page checked', state.lastPoll ? `${ago(state.lastPoll)} · next in <span id="nextPoll">${nextPollIn()}</span>s` : '–']);
   if (state.source) rows.push(['Read from', esc(state.source.label)]);
   if (d) rows.push(['Snapshots', `${fmt(d.records.length)} · since ${when(d.first)}`]);
   if (d) rows.push(['Projects', fmt(Object.keys(d.cur.counts).length)]);
@@ -301,39 +308,129 @@ function todayLabel(d) {
 
 function renderHero(d) {
   const counts = d.cur.counts;
-  const inBallot = HL in counts;
-  $('heroTitle').textContent = title(HL) || 'Hack The Rex';
-  if (!inBallot) { $('stats').innerHTML = '<div class="stat" style="grid-column:1/-1"><div class="s">Hack The Rex is not on the current ballot.</div></div>'; return; }
-  const rank = d.ranks[HL];
+  const n = Object.keys(counts).length;
   const stat = (label, v, s, extra = '') => `<div class="stat ${extra}"><p class="label">${label}</p><div class="v">${v}</div><div class="s">${s}</div></div>`;
+  const f = getForecast(d);
   const out = [];
-  out.push(stat('Rank', `#${rank}<small>/${Object.keys(counts).length}</small>`, rank <= FUNDED ? 'inside the funded top 5' : `${rank - FUNDED} place${rank - FUNDED > 1 ? 's' : ''} outside the top 5`, 'rex'));
-  out.push(stat('Weighted votes', fmt(counts[HL]), 'not unique voters', 'rex'));
-
-  const g2 = M.gapToPosition(counts, HL, 2);
-  if (g2) {
-    const sub = g2.self ? `ahead of #3 ${title(g2.other)}` : g2.gap >= 0 ? `lead over #2 ${title(g2.other)}` : `behind #2 ${title(g2.other)}`;
-    const lbl = rank === 1 ? 'Lead over #2' : 'vs #2';
-    out.push(stat(lbl, `<span class="${cls(g2.gap)}">${signed(g2.gap)}</span>`, esc(sub)));
+  if (!(HL in counts)) {
+    $('heroLabel').textContent = 'TKS High Agency Fund';
+    $('heroTitle').textContent = 'Who gets funded?';
+    const [first, second] = d.order;
+    const fifth = d.order[FUNDED - 1], sixth = d.order[FUNDED];
+    out.push(stat('Leading', fmt(counts[first]), `${esc(title(first))} · ${signed(counts[first] - counts[second])} ahead`));
+    if (fifth && sixth) {
+      const gap = counts[fifth] - counts[sixth];
+      out.push(stat(`Last funded spot`, fmt(counts[fifth]), `${esc(title(fifth))} · ${signed(gap)} over #${FUNDED + 1}`));
+    }
+    let close = null;
+    for (let i = 0; i < Math.min(d.order.length - 1, FUNDED + 2); i++) {
+      const g = counts[d.order[i]] - counts[d.order[i + 1]];
+      if (!close || g < close.g) close = { g, a: d.order[i], b: d.order[i + 1], i };
+    }
+    if (close) out.push(stat('Tightest race', fmt(close.g), `#${close.i + 1} vs #${close.i + 2} · ${esc(shortName(close.a))} / ${esc(shortName(close.b))}`));
+    const today = d.order.reduce((sum, s) => {
+      const c = M.changeFor(d.records, s, d.bases.today, d.cur);
+      return c.status === 'ok' || c.status === 'new' ? sum + c.delta : sum;
+    }, 0);
+    out.push(stat('Votes today', d.today.kind === 'none' ? '<span class="zero">–</span>' : signed(today), `across ${n} projects`));
+    if (f) {
+      const hot = d.order.slice(0, 20).sort((a, b) => (f.near[b] ?? 0) - (f.near[a] ?? 0))[0];
+      out.push(stat('Hottest now', `${(f.near[hot] ?? 0).toFixed(1)}<small>/h</small>`, esc(title(hot))));
+      const pOrder = M.sortedSlugs(f.projected);
+      out.push(stat('Likely cutoff', `~${fmt(f.projected[pOrder[FUNDED - 1]])}`, `votes for #${FUNDED} at close`));
+    }
+    $('stats').innerHTML = out.join('');
+    return;
   }
-  const g6 = rank === FUNDED + 1 ? M.gapToPosition(counts, HL, FUNDED) : M.gapToPosition(counts, HL, FUNDED + 1);
-  if (g6) {
-    const sub = rank === FUNDED + 1 ? `to pass #${FUNDED} ${title(g6.other)}`
-      : g6.gap >= 0 ? `cushion over #6 ${title(g6.other)}` : `behind #6 ${title(g6.other)}`;
-    out.push(stat(rank <= FUNDED ? 'Cushion over #6' : 'vs funding line', `<span class="${cls(g6.gap)}">${signed(g6.gap)}</span>`, esc(sub)));
+  $('heroLabel').textContent = 'Following';
+  $('heroTitle').textContent = title(HL);
+  const rank = d.ranks[HL];
+  out.push(stat('Rank', `#${rank}<small>/${n}</small>`, rank <= FUNDED ? `in the top ${FUNDED}` : `${rank - FUNDED} from the top ${FUNDED}`, 'rex'));
+  out.push(stat('Votes', fmt(counts[HL]), 'weighted', 'rex'));
+  const i = d.order.indexOf(HL);
+  if (i === 0 && d.order[1]) {
+    out.push(stat('Lead', `<span class="up">${signed(counts[HL] - counts[d.order[1]])}</span>`, `over ${esc(title(d.order[1]))}`));
+  } else if (i > 0) {
+    const above = d.order[i - 1];
+    out.push(stat('Next place', `<span class="${cls(counts[HL] - counts[above])}">${signed(counts[HL] - counts[above])}</span>`, `behind ${esc(title(above))}`));
+  }
+  if (rank <= FUNDED && d.order[FUNDED]) {
+    const g = counts[HL] - counts[d.order[FUNDED]];
+    out.push(stat('Cushion', `<span class="${cls(g)}">${signed(g)}</span>`, `over #${FUNDED + 1} ${esc(title(d.order[FUNDED]))}`));
+  } else if (d.order[FUNDED - 1]) {
+    const g = counts[HL] - counts[d.order[FUNDED - 1]];
+    out.push(stat('To the top 5', `<span class="${cls(g)}">${signed(g)}</span>`, `vs #${FUNDED} ${esc(title(d.order[FUNDED - 1]))}`));
   }
   const tc = M.changeFor(d.records, HL, d.bases.today, d.cur);
-  out.push(stat('Today', tc.status === 'collecting' ? '<span class="zero">—</span>' : `<span class="${cls(tc.delta)}">${signed(tc.delta)}</span>`, esc(todayLabel(d))));
-  const p = getForecast(d);
-  if (p && HL in p.projected) {
-    const pr = M.rankMap(p.projected)[HL];
-    out.push(stat('Predicted final', `~${fmt(p.projected[HL])}`, `${fmt(p.low[HL])}–${fmt(p.high[HL])} · #${pr} at close`));
+  out.push(stat('Today', tc.status === 'collecting' ? '<span class="zero">–</span>' : `<span class="${cls(tc.delta)}">${signed(tc.delta)}</span>`, esc(todayLabel(d))));
+  if (f && HL in f.projected) {
+    const pr = M.rankMap(f.projected)[HL];
+    out.push(stat('Predicted', `~${fmt(f.projected[HL])}`, `${fmt(f.low[HL])} to ${fmt(f.high[HL])} · #${pr}`));
   } else if (Date.now() >= CLOSE) {
-    out.push(stat('Final', fmt(counts[HL]), 'voting has closed'));
-  } else {
-    out.push(stat('Projected final', '<span class="zero">—</span>', 'collecting history'));
+    out.push(stat('Final', fmt(counts[HL]), 'voting closed'));
   }
   $('stats').innerHTML = out.join('');
+}
+
+// ---------------------------------------------------------------- add a team to the chart
+
+function renderAddList() {
+  const d = derive(); if (!d) return;
+  const sel = selection(d);
+  const q = $('addSearch').value.trim().toLowerCase();
+  const items = d.order.filter((s) => !sel.includes(s) && (!q || `${title(s)} ${school(s)}`.toLowerCase().includes(q))).slice(0, 80);
+  $('addList').innerHTML = items.map((s) => `<li role="option" data-add="${esc(s)}"><span class="r">${place(d.ranks[s], false)}</span><span><b>${esc(title(s))}</b><small>${esc(school(s))} · ${fmt(d.cur.counts[s])} votes</small></span></li>`).join('')
+    || '<li class="none">No match</li>';
+}
+function openAdd() {
+  $('addPop').hidden = false;
+  $('addSearch').value = '';
+  renderAddList();
+  $('addSearch').focus();
+}
+function closeAdd() { $('addPop').hidden = true; }
+function addTeam(slug) {
+  const d = derive(); if (!d) return;
+  const sel = selection(d);
+  if (!sel.includes(slug)) setPref('selected', [...sel, slug].slice(-MAX_SEL));
+  closeAdd();
+}
+
+// ---------------------------------------------------------------- project picker
+
+function setTeam(slug) {
+  HL = slug || null;
+  store.set('team', HL);
+  state.selected = null; store.set('selected', null);
+  state.show = 'rivals'; store.set('show', 'rivals');
+  const url = new URL(location.href);
+  if (HL) url.searchParams.set('team', HL); else url.searchParams.delete('team');
+  history.replaceState(null, '', url);
+  closePicker();
+  render();
+}
+
+function renderPicker(d) {
+  $('pickName').textContent = HL && HL in d.cur.counts ? title(HL) : 'Pick yours';
+  $('nearBtn').textContent = HL ? 'Near you' : 'Funding race';
+  if ($('pickPop').hidden) return;
+  const q = $('pickSearch').value.trim().toLowerCase();
+  const items = d.order.filter((s) => !q || `${title(s)} ${school(s)}`.toLowerCase().includes(q)).slice(0, 80);
+  $('pickList').innerHTML = (q ? '' : `<li role="option" data-team="" class="${HL ? '' : 'on'}"><span class="r">·</span><span><b>Whole race</b><small>No project, show the overall race</small></span></li>`)
+    + items.map((s) => `<li role="option" data-team="${esc(s)}" class="${s === HL ? 'on' : ''}"><span class="r">${place(d.ranks[s], false)}</span><span><b>${esc(title(s))}</b><small>${esc(school(s))} · ${fmt(d.cur.counts[s])} votes</small></span></li>`).join('')
+    || '<li class="none">No match</li>';
+}
+
+function openPicker() {
+  $('pickPop').hidden = false;
+  $('pickBtn').setAttribute('aria-expanded', 'true');
+  $('pickSearch').value = '';
+  const d = derive(); if (d) renderPicker(d);
+  $('pickSearch').focus();
+}
+function closePicker() {
+  $('pickPop').hidden = true;
+  $('pickBtn').setAttribute('aria-expanded', 'false');
 }
 
 // ---------------------------------------------------------------- chart
@@ -410,7 +507,8 @@ function renderChart(d) {
   for (const b of $('chartTabs').children) b.setAttribute('aria-selected', String(b.dataset.chart === state.chart));
   for (const b of $('rangeSeg').children) b.setAttribute('aria-pressed', String(Number(b.dataset.range) === state.range));
   const sel = selection(d);
-  $('chips').innerHTML = sel.map((s) => `<span class="chip"><i style="background:${colorFor(s, sel)}"></i><span>${esc(title(s))}</span><button type="button" data-unselect="${esc(s)}" aria-label="Remove ${esc(title(s))}">×</button></span>`).join('');
+  $('chips').innerHTML = sel.map((s) => `<span class="chip"><i style="background:${colorFor(s, sel)}"></i><span>${esc(title(s))}</span><button type="button" data-unselect="${esc(s)}" aria-label="Remove ${esc(title(s))}">×</button></span>`).join('')
+    + (sel.length < MAX_SEL ? '<button class="chip add" id="addChip" type="button" aria-haspopup="listbox">+ Add team</button>' : '');
   const custom = Array.isArray(state.selected);
   for (const b of $('showSeg').children) b.setAttribute('aria-pressed', String(!custom && b.dataset.show === state.show));
   const canProject = !!getForecast(d);
@@ -421,8 +519,7 @@ function renderChart(d) {
 
   const from = state.range ? d.cur.time - state.range * HOUR : -Infinity;
   const proj = state.showProj ? getForecast(d) : null;
-  const projNote = proj ? ' Faded dashed lines: recent momentum for the next few hours, then the daily + weekly pace up to the close; the shaded band is the range. A rough guide, not a forecast.'
-    : state.showProj && Date.now() < CLOSE ? ' Prediction lines appear after 1 hour of collections.' : '';
+  const projNote = proj ? 'Dashed lines show where each project is heading. The band is the likely range.' : '';
 
   const race = state.chart === 'race';
   $('race').hidden = !race;
@@ -465,7 +562,7 @@ function renderChart(d) {
         pointHoverRadius: 5, tension: 0, order: 2, fill: false,
         endLabel: `${shortName(slug)}  ${fmtVal(end, true)}`,
       });
-      // Shaded range between the slowest and fastest measured pace, for Hack The Rex.
+      // Shaded range between the slowest and fastest measured pace, for your project.
       if (slug === HL && kind === 'totals') {
         const band = (y, fillTo) => ({
           label: 'range', slug, projection: true, band: true, data: [{ x: last.x, y: last.y }, { x: CLOSE, y }],
@@ -541,7 +638,7 @@ function renderChart(d) {
     pace: 'Votes per hour, measured over the previous hour at each collection. It rises and falls as voting speeds up or slows down.',
     rank: 'Ballot position at each collection. Lines crossing means one project overtook another.',
   };
-  sw.dataset.tip = projNote.trim() || "Dashed lines continue each project's recent pace to the close.";
+  sw.dataset.tip = projNote || 'Dashed lines show where each project is heading.';
   $('chartTabs').dataset.tip = notes[kind];
 }
 
@@ -698,7 +795,7 @@ function renderBoard(d) {
     const isCut = showCut && r.rank <= FUNDED && (!next || next.rank > FUNDED);
     const on = sel.includes(r.slug);
     const winOf = (k) => M.WINDOWS.find((w) => w.key === k);
-    const today = r.ch.today.status === 'none' ? '<span class="zero" data-tip="No collection yet today (Toronto time).">—</span>'
+    const today = r.ch.today.status === 'none' ? '<span class="zero" data-tip="No collection yet today (Toronto time).">–</span>'
       : changeCell(r.ch.today, `Today (${todayLabel(d)})`, null);
     html.push(`<tr class="${r.slug === HL ? 'rex' : ''} ${isCut ? 'cut' : ''}">
       <td class="num rank sticky-a">${place(r.rank, false)}</td>
@@ -742,7 +839,7 @@ function feedItem(e, fresh) {
     }
     case 'cutoff': return `<li class="fitem alert ${rex}${f}"><span class="d ${e.entered ? 'up' : 'down'}">${e.entered ? 'IN' : 'OUT'}</span><span class="t">${name} ${e.entered ? 'entered' : 'dropped out of'} the funded top ${FUNDED} (#${e.after})</span></li>`;
     case 'new': return `<li class="fitem alert ${f}"><span class="d"><span class="badge">new</span></span><span class="t">${name} joined the ballot with ${fmt(e.total)}</span></li>`;
-    case 'removed': return `<li class="fitem alert bad ${f}"><span class="d down">—</span><span class="t">${name} is no longer listed (had ${fmt(e.total)})</span></li>`;
+    case 'removed': return `<li class="fitem alert bad ${f}"><span class="d down">–</span><span class="t">${name} is no longer listed (had ${fmt(e.total)})</span></li>`;
     default: return '';
   }
 }
@@ -772,8 +869,8 @@ function renderFeed(d) {
   }
   if (newestAt !== null) lastFeedTop = Math.max(lastFeedTop ?? 0, newestAt);
   $('feed').innerHTML = html.join('') || `<li class="empty">${d.records.length < 2
-    ? 'Waiting for the next collection. Updates appear here as projects gain votes, change places or cross the funding line.'
-    : 'Nothing matches this filter yet.'}</li>`;
+    ? 'Updates appear here as projects gain votes, change places or cross the funding line.'
+    : state.feed === 'rex' && !HL ? 'Pick your project to see its updates here.' : 'Nothing here yet.'}</li>`;
 }
 
 // ---------------------------------------------------------------- projection
@@ -806,7 +903,7 @@ function renderProjection(d) {
   if (HL in f.projected) {
     const g = M.gapToPosition(f.projected, HL, pr[HL] === 1 ? 2 : FUNDED + 1);
     const t = TREND[f.trend[HL]];
-    head = `<div class="proj-head"><span class="label">Hack The Rex at close</span><b>#${pr[HL]} · ~${fmt(f.projected[HL])}</b>
+    head = `<div class="proj-head"><span class="label">${esc(title(HL))} at close</span><b>#${pr[HL]} · ~${fmt(f.projected[HL])}</b>
       <span class="zero">range ${fmt(f.low[HL])}–${fmt(f.high[HL])}</span> · <span class="${t[2]}">${t[0]} ${t[1]}</span>
       ${g ? `<br><span class="${cls(g.gap)}">${signed(g.gap)}</span> vs ${esc(title(g.other))}` : ''}
       <table class="paces"><tr><th>Pace</th><th>Measured over</th><th class="num">Votes/h</th><th class="num">Used for</th></tr>${paceRows(f.parts[HL])}</table></div>`;
@@ -817,63 +914,7 @@ function renderProjection(d) {
       <span class="r">${place(pr[s], false)}</span><span class="nm">${esc(title(s))}</span>
       <span class="pv" data-tip="${esc(f.parts[s].map((p) => `${p.label}: ${p.rate.toFixed(1)}/h`).join('\n'))}">~${fmt(f.projected[s])}<small>${fmt(f.low[s])}–${fmt(f.high[s])} · <span class="${t[2]}">${t[0]}</span></small></span></div>`;
   }).join('')}</div>
-    <p class="note" data-tip="Momentum fades: the recent pace (last 1–3h) sets the next ${Math.round(f.nearHours)} hours, then a 45/55 blend of the last-day pace (6–24h) and the source's trailing 7-day pace covers the remaining ${dur(Math.max(0, f.remainingHours - f.nearHours) * HOUR)}. The range uses the slowest and fastest pace in each stretch, and is at least ±25% of the long-run pace (±50% while only one long-run pace exists), because daily voting swings a lot. Weighted votes. Newsletter confirmations can double earlier votes at once and removals take votes away, so real totals can jump either way.">Recent momentum, then daily + weekly pace · weighted votes</p>`;
-}
-
-// ---------------------------------------------------------------- earlier history
-
-const history = { manual: null, refs: null, best: null, loaded: false };
-
-async function loadHistory() {
-  if (history.loaded) return;
-  history.loaded = true;
-  const get = async (name) => { try { return JSON.parse(await getText(`data/${name}?v=${Date.now()}`)); } catch { return null; } };
-  [history.manual, history.refs, history.best] = await Promise.all(
-    ['manual_observations.json', 'reference_daily_gains.json', 'source_best_days.json'].map(get));
-  const d = derive();
-  if (d) renderHistory(d);
-}
-
-function renderHistory(d) {
-  const el = $('history');
-  if (!el) return;
-  const parts = [];
-  const m = history.manual;
-  if (m && m.observations?.length) {
-    const slugs = Object.keys(m.projects);
-    parts.push(`<div class="hist-head"><h3>Manual checks · Oct 28–29</h3><span class="zero">order known · times not recorded · — = not recorded</span></div>
-      <div class="hist-wrap"><table class="hist"><thead><tr><th class="num">#</th>${slugs.map((s) => `<th class="num ${s === HL ? 'rexcol' : ''}" title="${esc(m.projects[s])}">${esc(shortLabel(m.projects[s]))}</th>`).join('')}</tr></thead>
-      <tbody>${m.observations.map((o, i) => {
-        const prev = m.observations[i - 1];
-        return `<tr><td class="num zero">${o.observation_order}</td>${slugs.map((s) => {
-          const v = o.totals[s];
-          if (v == null) return '<td class="num zero">—</td>';
-          const pv = prev?.totals[s];
-          const jump = pv != null && v !== pv ? ` <small class="${cls(v - pv)}">${signed(v - pv)}</small>` : '';
-          return `<td class="num ${s === HL ? 'rexcol' : ''}">${fmt(v)}${jump}</td>`;
-        }).join('')}</tr>`;
-      }).join('')}</tbody></table></div>`);
-  }
-  const refs = history.refs?.entries || [];
-  if (refs.length) {
-    parts.push(`<div class="hist-head"><h3>Best days</h3><span class="zero">a project's single best day, not an average</span></div>
-      <div class="days">${refs.map((r) => {
-        const now = state.projects[r.slug]?.source_best_day;
-        const badge = r.status === 'verified' ? '<span class="badge ok">verified</span>' : r.status === 'superseded' ? '<span class="badge">beaten</span>' : '<span class="badge">unverified</span>';
-        const latest = now && (now.date !== r.date || now.votes !== r.net_daily_gain) ? ` → now +${fmt(now.votes)} on ${now.date}` : '';
-        return `<div class="day ${r.slug === HL ? 'rex' : ''}"><span class="nm">${esc(r.project)}</span><span>+${fmt(r.net_daily_gain)} on ${r.date}${latest}</span>${badge}</div>`;
-      }).join('')}</div>`);
-  }
-  el.innerHTML = parts.join('') || '<div class="empty">No earlier history loaded.</div>';
-}
-
-function shortLabel(t) {
-  const map = { 'Hack The Rex': 'Rex', 'CREATE Conference Council': 'CREATE', 'St. Robert Catholic High School HOSA': 'HOSA',
-    'BlankIsYours': 'Blank', 'Open Minds Foundation': 'Open Minds', 'Mac Design Cup 2026': 'Mac', 'Lane Tech Science Olympiad Build Clinic': 'Lane Tech' };
-  if (map[t]) return map[t];
-  if (/faraday/i.test(t)) return 'Faraday';
-  if (/^ramp/i.test(t)) return 'Ramp';
-  return t.split(' ')[0];
+    <p class="note" data-tip="Recent pace for the next ${Math.round(f.nearHours)}h, then a mix of the daily and weekly pace. Ranges show a slow and a fast case.">Recent pace, then daily and weekly pace</p>`;
 }
 
 // ---------------------------------------------------------------- market read-outs
@@ -924,7 +965,7 @@ function renderMarket(d, f) {
   const rows = slugs.map((s) => {
     const m = M.momentum(d.records, f, s);
     const cells = gains[s].map((g, i) => {
-      if (!g) return '<td class="num cell none" data-tip="Not tracked from the start of this block">—</td>';
+      if (!g) return '<td class="num cell none" data-tip="Not tracked from the start of this block">–</td>';
       const sess = sessions[i];
       const tip = `${sess.name} ${dayFmt.format(sess.start + HOUR)} (${SESSION_SHORT[sess.name]})${sess.live ? ', so far' : ''}: ${signed(g.gain)} in ${dur(g.hours * HOUR)} · ${(g.gain / (g.hours || 1)).toFixed(1)}/h`;
       return `<td class="num cell ${g.gain < 0 ? 'neg' : ''}" style="${heat(g)}" data-tip="${esc(tip)}">${signed(g.gain)}</td>`;
@@ -935,7 +976,7 @@ function renderMarket(d, f) {
       <td class="num r">${place(d.ranks[s], false)}</td>
       <td class="nm"><span>${esc(title(s))}</span></td>
       ${cells}
-      <td class="num pace">${pace == null ? '—' : `${pace.toFixed(1)}<small>/h</small>`}</td>
+      <td class="num pace">${pace == null ? '–' : `${pace.toFixed(1)}<small>/h</small>`}</td>
       <td><span class="lvl ${m.level}" data-tip="${esc(levelTip(m))}">${LEVEL[m.level].arrow} ${LEVEL[m.level].tag}</span></td>
       <td>${o ? `<span class="outlook ${o.replace(' ', '-')}">${OUTLOOK[o]}</span>` : ''}</td>
     </tr>`;
@@ -943,8 +984,8 @@ function renderMarket(d, f) {
   el.innerHTML = `<div class="mk-wrap"><table class="mk">
     <thead><tr><th class="num">#</th><th>Project</th>${head}<th class="num">Pace now</th><th>Momentum</th><th>Outlook</th></tr></thead>
     <tbody>${rows}</tbody></table></div>
-    <div class="mk-legend"><span><i class="sw s1"></i><i class="sw s2"></i><i class="sw s3"></i> hotter = more votes per hour</span>
-    <span>Outlook compares predicted ranges for the top ${FUNDED}: <b class="outlook safe">Safe</b> holds even in its worst case</span></div>`;
+    <div class="mk-legend"><span><i class="sw s1"></i><i class="sw s2"></i><i class="sw s3"></i> hotter means more votes per hour</span>
+    <span><b class="outlook safe">Safe</b> stays top ${FUNDED} even in a bad case</span></div>`;
 }
 
 function levelTip(m) {
@@ -960,13 +1001,13 @@ function buildSignals(d, f) {
   const close = CLOSE;
   const sparkFrom = d.cur.time - 6 * HOUR;
   const add = (score, slug, kind, title2, body) => out.push({ score, slug, kind, title: title2, body });
-  // Overtake watch: Hack The Rex vs the next two, and both sides of the funding line.
+  // Overtake watch: your project vs its neighbours (or the top two), and both sides of the funding line.
   const pairs = [];
   const iRex = d.order.indexOf(HL);
   if (iRex >= 0) {
     if (iRex > 0) pairs.push([d.order[iRex - 1], HL]);
     for (const k of [1, 2]) if (d.order[iRex + k]) pairs.push([HL, d.order[iRex + k]]);
-  }
+  } else if (d.order[1]) pairs.push([d.order[0], d.order[1]]);
   if (d.order[FUNDED]) pairs.push([d.order[FUNDED - 1], d.order[FUNDED]]);
   const seen = new Set();
   for (const [lead, chase] of pairs) {
@@ -980,17 +1021,17 @@ function buildSignals(d, f) {
     if (o.passAt) {
       const inH = (o.passAt - d.cur.time) / HOUR;
       add(funding ? 90 : chase === HL || lead === HL ? 95 : 60, chase, 'overtake', `Overtake watch · ${who}`,
-        `${o.gap} behind${o.closingPerHour > 0 ? `, closing ${o.closingPerHour.toFixed(1)}/h right now` : ''}. On current forecasts it passes in ~${dur(inH * HOUR)} (${when(o.passAt)})${funding ? ', taking the last funded spot' : ''}.`);
+        `${o.gap} behind${o.closingPerHour > 0 ? `, closing ${o.closingPerHour.toFixed(1)}/h` : ''}. Could pass in ~${dur(inH * HOUR)} (${when(o.passAt)})${funding ? ' and take the last funded spot' : ''}.`);
     } else if (o.closingPerHour > 0.3 && o.gap < 150) {
       add(funding ? 70 : 50, chase, 'closing', `Closing in · ${who}`,
-        `${o.gap} behind and gaining ${o.closingPerHour.toFixed(1)}/h right now, but the forecast has it running out of time before the close.`);
+        `${o.gap} behind, gaining ${o.closingPerHour.toFixed(1)}/h. Likely runs out of time.`);
     } else if (lead === HL || chase === HL) {
-      add(30, lead === HL ? chase : lead, 'gap', `Gap holding · ${who}`, `${lead === HL ? 'Lead' : 'Gap'} of ${o.gap}. Not on course to change before the close.`);
+      add(30, lead === HL ? chase : lead, 'gap', `Gap holding · ${who}`, `${lead === HL ? 'Lead' : 'Gap'} of ${o.gap}. Not closing.`);
     }
   }
   if (d.order[FUNDED] && Math.abs(d.cur.counts[d.order[FUNDED - 1]] - d.cur.counts[d.order[FUNDED]]) <= 10) {
     add(100, d.order[FUNDED], 'line', 'Funding line is a coin flip',
-      `#${FUNDED} ${title(d.order[FUNDED - 1])} and #${FUNDED + 1} ${title(d.order[FUNDED])} are ${Math.abs(d.cur.counts[d.order[FUNDED - 1]] - d.cur.counts[d.order[FUNDED]])} apart.`);
+      `#${FUNDED} and #${FUNDED + 1} are ${Math.abs(d.cur.counts[d.order[FUNDED - 1]] - d.cur.counts[d.order[FUNDED]])} apart.`);
   }
   // Momentum calls for the top 15.
   for (const s of d.order.slice(0, 15)) {
@@ -998,12 +1039,12 @@ function buildSignals(d, f) {
     const top = d.ranks[s] <= FUNDED + 3 || s === HL;
     if (m.level === 'surging') {
       add(80 + Math.min(15, m.ratio), s, 'surging', `${title(s)} is surging`,
-        `${m.recent.toFixed(1)} votes/h, about ${m.ratio.toFixed(1)}× its usual ${m.base.toFixed(1)}/h. Bursts like this usually fade, so the forecast lets it cool after ${Math.round(f.nearHours)}h: ~${fmt(f.projected[s])} at close.`);
+        `${m.recent.toFixed(1)}/h, ${m.ratio.toFixed(1)}× its usual pace. Bursts usually fade. Predicted ~${fmt(f.projected[s])}.`);
     } else if (m.level === 'heating' && top) {
-      add(55, s, 'heating', `${title(s)} is heating up`, `${m.recent.toFixed(1)}/h vs a usual ${m.base.toFixed(1)}/h.`);
+      add(55, s, 'heating', `${title(s)} is heating up`, `${m.recent.toFixed(1)}/h, usually ${m.base.toFixed(1)}/h.`);
     } else if (m.level === 'cooling' && top) {
       add(s === HL ? 85 : 45, s, 'cooling', `${title(s)} is slowing down`,
-        `${m.recent.toFixed(1)}/h now vs a usual ${m.base.toFixed(1)}/h. If it stays this slow it ends near ${fmt(Math.round(d.cur.counts[s] + m.recent * f.remainingHours))} instead of ~${fmt(f.projected[s])}.`);
+        `${m.recent.toFixed(1)}/h, usually ${m.base.toFixed(1)}/h. At this pace it ends near ${fmt(Math.round(d.cur.counts[s] + m.recent * f.remainingHours))}.`);
     } else if (m.level === 'stalled' && top) {
       add(s === HL ? 85 : 40, s, 'stalled', `${title(s)} has stalled`, `No new votes in ${dur(m.quietHours * HOUR)}.`);
     }
@@ -1016,7 +1057,7 @@ function buildSignals(d, f) {
     const best = Object.entries(g).filter(([, v]) => v[0]).sort((a, b) => b[1][0].gain - a[1][0].gain)[0];
     if (best && best[1][0].gain > 0) {
       add(35, best[0], 'session', `Won the ${last.name.toLowerCase()} (${SESSION_SHORT[last.name]})`,
-        `${title(best[0])} gained ${signed(best[1][0].gain)} between ${SESSION_SHORT[last.name].replace('–', ' and ')}, the most of any project.`);
+        `${title(best[0])} gained ${signed(best[1][0].gain)}, the most of anyone.`);
     }
   }
   return out.sort((a, b) => b.score - a.score).slice(0, 7).map((x) => ({
@@ -1031,14 +1072,14 @@ function renderSignals(d, f) {
   el.innerHTML = list.length ? list.map((x) => `<li class="sig ${x.kind} ${x.slug === HL ? 'rex' : ''}">
       <div class="sig-top"><span class="sig-title">${esc(x.title)}</span>${x.spark}</div>
       <p>${esc(x.body)}</p></li>`).join('')
-    : '<li class="empty">Signals appear once there is enough history to compare paces.</li>';
+    : '<li class="empty">Signals show up once there is enough history.</li>';
 }
 
 // ---------------------------------------------------------------- notifications
 
 /**
  * Alerts for new collections. Removed projects and vote drops are always alerted, for
- * every project; then Hack The Rex news and funding-line changes. Shown as pop-ups and,
+ * every project; then news for your project and funding-line changes. Shown as pop-ups and,
  * when switched on with the bell, as browser notifications (which also appear while the
  * dashboard is in a background tab).
  */
@@ -1051,7 +1092,7 @@ function alertsFor(events, d) {
   }
   for (const e of events.filter((x) => x.kind === 'decrease').sort((a, b) => a.delta - b.delta)) {
     const rex = e.slug === HL;
-    out.push({ cls: 'bad', label: rex ? 'Hack The Rex lost votes' : 'Votes removed', text: `${title(e.slug)} ${signed(e.delta)} · now ${fmt(e.total)} (#${d.ranks[e.slug] ?? '–'})`, urgent: true });
+    out.push({ cls: 'bad', label: rex ? `${title(HL)} lost votes` : 'Votes removed', text: `${title(e.slug)} ${signed(e.delta)} · now ${fmt(e.total)} (#${d.ranks[e.slug] ?? '–'})`, urgent: true });
   }
   for (const e of events) {
     if (e.kind === 'cutoff') out.push({ cls: e.slug === HL ? 'rex' : '', label: 'Funding line', text: `${title(e.slug)} ${e.entered ? 'entered' : 'dropped out of'} the top ${FUNDED}`, urgent: true });
@@ -1059,7 +1100,7 @@ function alertsFor(events, d) {
     else if (e.kind === 'new') out.push({ cls: '', label: 'New project', text: `${title(e.slug)} joined the ballot` });
   }
   const rexGain = events.filter((e) => e.slug === HL && e.kind === 'gain').reduce((s, e) => s + e.delta, 0);
-  if (rexGain) out.push({ cls: 'rex', label: 'Hack The Rex', text: `${signed(rexGain)} votes · now ${fmt(d.cur.counts[HL])} (#${d.ranks[HL]})` });
+  if (rexGain) out.push({ cls: 'rex', label: title(HL), text: `${signed(rexGain)} votes · now ${fmt(d.cur.counts[HL])} (#${d.ranks[HL]})` });
   return out;
 }
 
@@ -1101,7 +1142,7 @@ async function toggleNotifications() {
     return;
   }
   setPref('notify', true);
-  toast({ cls: 'rex', label: 'Alerts on', text: 'You will get a notification when a project is removed, loses votes, crosses the funding line, or Hack The Rex moves.' });
+  toast({ cls: 'rex', label: 'Alerts on', text: 'You will hear about removed votes, funding line changes and your project.' });
   systemNotify([{ label: 'Alerts are on', text: 'This is what a vote alert looks like.' }]);
 }
 
@@ -1127,6 +1168,22 @@ function setPref(k, v) { state[k] = v; store.set(k, v); render(); }
 
 function bind() {
   $('refreshBtn').addEventListener('click', () => { state.loadedKey = null; poll(); });
+  $('pickBtn').addEventListener('click', () => ($('pickPop').hidden ? openPicker() : closePicker()));
+  $('chips').addEventListener('click', (e) => { if (e.target.closest('#addChip')) { e.stopPropagation(); $('addPop').hidden ? openAdd() : closeAdd(); } });
+  $('addSearch').addEventListener('input', renderAddList);
+  $('addSearch').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeAdd();
+    if (e.key === 'Enter') { const first = $('addList').querySelector('[data-add]'); if (first) addTeam(first.dataset.add); }
+  });
+  $('addList').addEventListener('click', (e) => { const li = e.target.closest('[data-add]'); if (li) addTeam(li.dataset.add); });
+  document.addEventListener('click', (e) => { if (!$('addPop').hidden && !e.target.closest('#addPop') && !e.target.closest('#addChip')) closeAdd(); });
+  $('pickSearch').addEventListener('input', () => { const d = derive(); if (d) renderPicker(d); });
+  $('pickSearch').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closePicker();
+    if (e.key === 'Enter') { const first = $('pickList').querySelector('[data-team]'); if (first) setTeam(first.dataset.team); }
+  });
+  $('pickList').addEventListener('click', (e) => { const li = e.target.closest('[data-team]'); if (li) setTeam(li.dataset.team); });
+  document.addEventListener('click', (e) => { if (!$('pickPop').hidden && !e.target.closest('#picker')) closePicker(); });
   $('bellBtn').addEventListener('click', () => toggleNotifications().then(renderBell));
   $('chartTabs').addEventListener('click', (e) => { const b = e.target.closest('[data-chart]'); if (b) setPref('chart', b.dataset.chart); });
   $('rangeSeg').addEventListener('click', (e) => { const b = e.target.closest('[data-range]'); if (b) setPref('range', Number(b.dataset.range)); });
@@ -1151,7 +1208,7 @@ function bind() {
     const d = derive(); if (!d) return;
     const slug = t.dataset.toggle || t.dataset.unselect;
     let sel = [...selection(d)];
-    sel = sel.includes(slug) ? sel.filter((s) => s !== slug) : [...sel, slug].slice(-8);
+    sel = sel.includes(slug) ? sel.filter((s) => s !== slug) : [...sel, slug].slice(-MAX_SEL);
     setPref('selected', sel.length ? sel : null);
   });
   document.querySelector('.board thead').addEventListener('click', (e) => {
@@ -1179,19 +1236,44 @@ function bind() {
   $('sourceLink').href = CFG.sourceUrl;
 }
 
-function tick() {
-  const left = CLOSE - Date.now();
-  if (left <= 0) $('countdown').textContent = 'Closed';
-  else {
-    const s = Math.floor(left / 1000);
-    const dd = Math.floor(s / 86400), hh = Math.floor(s % 86400 / 3600), mm = Math.floor(s % 3600 / 60), ss = s % 60;
-    $('countdown').textContent = `${dd}d ${String(hh).padStart(2, '0')}h ${String(mm).padStart(2, '0')}m ${String(ss).padStart(2, '0')}s`;
+// Countdown tiles. Only the digits that changed are replaced, so they can roll in.
+let clockParts = null;
+function renderClock(left) {
+  const el = $('countdown');
+  if (left <= 0) {
+    if (clockParts !== 'closed') { el.innerHTML = '<div class="clock closed"><b>Voting closed</b></div>'; clockParts = 'closed'; }
+    return;
   }
+  const t = Math.floor(left / 1000);
+  const parts = [['days', Math.floor(t / 86400)], ['hrs', Math.floor(t % 86400 / 3600)], ['min', Math.floor(t % 3600 / 60)], ['sec', t % 60]]
+    .filter(([k, v], i) => i > 0 || v > 0)
+    .map(([k, v]) => [k, String(v).padStart(2, '0')]);
+  const final = left < HOUR;
+  const key = parts.map(([k]) => k).join();
+  if (!clockParts || clockParts.key !== key) {
+    el.innerHTML = `<div class="clock">${parts.map(([k, v]) => `<div class="tile" data-k="${k}"><b>${v}</b><span>${k}</span></div>`).join('<i>:</i>')}</div>`;
+    clockParts = { key, values: {} };
+  }
+  el.firstElementChild.classList.toggle('final', final);
+  for (const [k, v] of parts) {
+    if (clockParts.values[k] === v) continue;
+    const b = el.querySelector(`[data-k="${k}"] b`);
+    b.textContent = v;
+    b.classList.remove('roll'); void b.offsetWidth; b.classList.add('roll');
+    clockParts.values[k] = v;
+  }
+}
+
+function tick() {
+  renderClock(CLOSE - Date.now());
   const np = document.getElementById('nextPoll');
   if (np) np.textContent = nextPollIn();
+  const bar = document.getElementById('syncBar');
+  if (bar && state.lastPoll) bar.style.width = `${Math.min(100, ((Date.now() - state.lastPoll) / (CFG.refreshSeconds * 1000)) * 100)}%`;
   if (state.lastPoll && Date.now() - state.lastPoll >= CFG.refreshSeconds * 1000 && !state.loading && document.visibilityState === 'visible') poll();
 }
 
+HL = initialTeam();
 bind();
 poll();
 // Re-measure chart labels once the web fonts have loaded.

@@ -1,6 +1,6 @@
 // Dashboard settings. Edit and push; the site redeploys automatically.
 window.TRACKER_CONFIG = {
-  highlightSlug: 'hack-the-rex-7615bd',
+  defaultTeam: null,           // slug to follow when a visitor hasn't picked one (null = whole race)
   sourceUrl: 'https://schools.tks.world/high-agency-fund',
   votingClosesAt: '2026-11-01T03:59:00Z',   // Oct 31, 11:59 PM Toronto (EDT)
   fundedSpots: 5,
