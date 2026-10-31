@@ -1,6 +1,6 @@
 # H.S. High Agency Fund Vote Tracker
 
-**Live dashboard: https://eben-siyabalapitiya.github.io/hack-the-rex-votes/**
+**Live: https://haf-tracker.vercel.app/** (also on GitHub Pages: https://eben-siyabalapitiya.github.io/haf-tracker/)
 
 A live tracker for the [TKS High Agency Fund](https://schools.tks.world/high-agency-fund) ballot. Pick your project and follow the race: who's gaining, who's slowing down and who's likely to finish in the funded top 5.
 

@@ -8,5 +8,5 @@ window.TRACKER_CONFIG = {
   staleAfterMinutes: 15,       // flag data as stale after this long without a successful collection
   // Where to read fresh vote data between deploys (the GitHub repo the collector writes to).
   // Needed on Vercel or a custom domain; on USERNAME.github.io/REPO it is detected automatically.
-  repo: { owner: 'Eben-Siyabalapitiya', name: 'hack-the-rex-votes', branch: 'main' },
+  repo: { owner: 'Eben-Siyabalapitiya', name: 'haf-tracker', branch: 'main' },
 };
