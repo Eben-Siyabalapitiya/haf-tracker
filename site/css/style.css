@@ -502,3 +502,24 @@ a.ext:hover::after { transform: translate(2px, -3px); }
   .mk .lvl, .mk .outlook { font-size: 9.5px; padding: 5px 6px; letter-spacing: 0.04em; }
   .mk-wrap { overflow-x: visible; }
 }
+
+/* stat cards: separate, soft and clean, with a glow that follows the cursor */
+.stats { border: 0; background: none; overflow: visible; gap: 12px; }
+.stats .stat {
+  position: relative; overflow: hidden; border: 1px solid rgba(239, 235, 228, 0.09) !important; border-radius: 14px;
+  padding: 18px 20px 20px; background: linear-gradient(155deg, #171512, #0d0c0a);
+  transition: transform .3s cubic-bezier(0.4, 0, 0.2, 1), border-color .3s, box-shadow .3s;
+}
+.stats .stat::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .35s;
+  background: radial-gradient(320px circle at var(--mx, 50%) var(--my, 50%), rgba(232, 118, 44, 0.16), transparent 45%);
+}
+.stats .stat:hover { transform: translateY(-2px); border-color: rgba(232, 118, 44, 0.35) !important; box-shadow: 0 18px 40px -24px rgba(0, 0, 0, 0.9); }
+.stats .stat:hover::before { opacity: 1; }
+.stats .stat > * { position: relative; }
+.stats .stat .v { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; background: linear-gradient(180deg, #faf7f1, #b9b3aa); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.stats .stat.rex .v, .stats .stat .v .up, .stats .stat .v .down, .stats .stat .v .zero { -webkit-text-fill-color: initial; }
+.stats .stat.rex .v { background: none; color: var(--rex); }
+.stats .stat .v small { -webkit-text-fill-color: var(--muted); }
+.stats .stat .s { margin-top: 6px; }
+@media (max-width: 720px) { .stats { gap: 10px; } .stats .stat { padding: 14px 15px 16px; } .stats .stat .v { font-size: 24px; } }
