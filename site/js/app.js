@@ -336,8 +336,8 @@ function renderHero(d) {
   const f = getForecast(d);
   const out = [];
   if (!(HL in counts)) {
-    $('heroLabel').textContent = 'TKS High Agency Fund';
-    $('heroTitle').textContent = 'Who gets funded?';
+    $('heroLabel').textContent = 'Unofficial · 2026 ballot';
+    $('heroTitle').innerHTML = `H.S. High Agency Fund <span class="title-tag"><svg viewBox="0 0 14 14" width="13" height="13" aria-hidden="true"><rect x="1" y="7" width="3" height="6" rx="1"/><rect x="5.5" y="3" width="3" height="10" rx="1"/><rect x="10" y="5" width="3" height="8" rx="1"/></svg>Vote Tracker</span>`;
     const [first, second] = d.order;
     const fifth = d.order[FUNDED - 1], sixth = d.order[FUNDED];
     out.push(stat('Leading', fmt(counts[first]), `${esc(title(first))} · ${signed(counts[first] - counts[second])} ahead`));

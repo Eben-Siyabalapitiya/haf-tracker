@@ -1,4 +1,4 @@
-# Ballot Watch
+# H.S. High Agency Fund Vote Tracker
 
 **Live dashboard: https://eben-siyabalapitiya.github.io/hack-the-rex-votes/**
 
