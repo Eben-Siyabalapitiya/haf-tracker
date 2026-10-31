@@ -1,14 +1,14 @@
 {
  "source_url": "https://schools.tks.world/high-agency-fund",
- "last_success": "2026-10-31T20:02:09Z",
- "last_change": "2026-10-31T20:01:09Z",
+ "last_success": "2026-10-31T20:02:39Z",
+ "last_change": "2026-10-31T20:02:39Z",
  "project_count": 80,
- "parser_strategy": "ballot-props",
- "source_checked_at": "2026-10-31T20:02:09Z",
- "source_today": "2026-10-31",
+ "parser_strategy": "vote-feed",
+ "source_checked_at": "2026-10-31T20:02:39Z",
+ "source_today": null,
  "warnings": [],
  "consecutive_failures": 0,
  "cycle_id": "00000000-0000-4000-8000-000000000f26",
- "last_snapshot": "2026-10-31T20:01:09Z",
+ "last_snapshot": "2026-10-31T20:02:39Z",
  "source_facts_at": "2026-10-31T20:02:09Z"
 }
