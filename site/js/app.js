@@ -957,7 +957,7 @@ function renderProjection(d) {
 
 const LEVEL = {
   surging: { tag: 'Surging', arrow: '▲▲' },
-  heating: { tag: 'Heating up', arrow: '▲' },
+  heating: { tag: 'Heating', arrow: '▲' },
   steady: { tag: 'Steady', arrow: '▸' },
   cooling: { tag: 'Cooling', arrow: '▼' },
   stalled: { tag: 'Stalled', arrow: '■' },
@@ -981,9 +981,12 @@ const LEVEL_COLOR = { surging: '#ff5147', heating: '#ff9a3d', steady: '#a39e96',
 function renderMarket(d, f) {
   const el = $('market');
   if (!el) return;
-  const sessions = M.sessionsBetween(d.first, d.cur.time).slice(-5);
+  // Show as many time blocks as fit without sideways scrolling (phones scroll instead).
+  const width = el.clientWidth || 800;
+  const blocks = isPhone() ? 5 : width >= 820 ? 5 : width >= 700 ? 4 : 3;
+  const sessions = M.sessionsBetween(d.first, d.cur.time).slice(-blocks);
   let slugs = d.order.slice(0, 10);
-  if (!slugs.includes(HL)) slugs.push(HL);
+  if (HL && HL in d.cur.counts && !slugs.includes(HL)) slugs.push(HL);
   const gains = M.sessionGains(d.records, slugs, sessions);
   const outlook = f ? M.fundingOutlook(f, FUNDED) : {};
   const rates = slugs.flatMap((s) => gains[s].filter(Boolean).map((g) => (g.hours > 0 ? g.gain / g.hours : 0)));
@@ -1018,6 +1021,7 @@ function renderMarket(d, f) {
     </tr>`;
   }).join('');
   el.innerHTML = `<div class="mk-wrap"><table class="mk">
+    <colgroup><col class="c-r"><col class="c-nm">${sessions.map(() => '<col class="c-s">').join('')}<col class="c-p"><col class="c-m"><col class="c-o"></colgroup>
     <thead><tr><th class="num">#</th><th>Project</th>${head}<th class="num">Pace now</th><th>Momentum</th><th>Outlook</th></tr></thead>
     <tbody>${rows}</tbody></table></div>
     <div class="mk-legend"><span><i class="sw s1"></i><i class="sw s2"></i><i class="sw s3"></i> hotter means more votes per hour</span>
@@ -1272,6 +1276,17 @@ function bind() {
   document.addEventListener('pointerout', (e) => { if (e.target.closest('[data-tip]') && e.pointerType === 'mouse') tip.hidden = true; });
   document.addEventListener('click', (e) => { const el = e.target.closest('[data-tip]'); if (el) show(el); else tip.hidden = true; });
   window.addEventListener('scroll', () => { tip.hidden = true; }, { passive: true });
+  // Re-fit the Vote Heat board whenever its box changes size (window resize, fonts loading, layout shifts).
+  let fitTimer = null, fitWidth = 0;
+  const refit = () => {
+    const w = $('market').clientWidth;
+    if (Math.abs(w - fitWidth) < 4) return;
+    fitWidth = w;
+    clearTimeout(fitTimer);
+    fitTimer = setTimeout(() => { const d = derive(); if (d) renderMarket(d, getForecast(d)); }, 120);
+  };
+  window.addEventListener('resize', refit);
+  if ('ResizeObserver' in window) new ResizeObserver(refit).observe($('market'));
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && Date.now() - state.lastPoll > 30e3) poll();
   });
