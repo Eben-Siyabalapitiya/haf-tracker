@@ -444,7 +444,7 @@ table.hist .rexcol { color: var(--rex); }
 .pill[data-state="loading"] .sync, .pill[data-state="closed"] .sync { display: none; }
 
 /* made by */
-.made { margin-top: 0; padding: 20px 22px; border: 1px solid var(--line); border-radius: var(--radius); display: grid; grid-template-columns: 1fr auto; gap: 10px 24px; align-items: center; background: linear-gradient(120deg, rgba(232, 118, 44, 0.06), transparent 55%); }
+.made { margin-top: 30px; padding: 20px 22px; border: 1px solid var(--line); border-radius: var(--radius); display: grid; grid-template-columns: 1fr auto; gap: 10px 24px; align-items: center; background: linear-gradient(120deg, rgba(232, 118, 44, 0.06), transparent 55%); }
 .made-by { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 17px; font-weight: 600; color: var(--text); }
 .made-k { font: 500 10.5px/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); margin-right: 4px; }
 
