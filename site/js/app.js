@@ -21,6 +21,28 @@ const store = {
   set(k, v) { try { localStorage.setItem('htr:' + k, JSON.stringify(v)); } catch { /* private mode */ } },
 };
 
+// Each chart tab keeps its own teams and its own Funding race / Top 10 / Movers choice.
+const TABS = ['race', 'totals', 'pace', 'rank'];
+function perTab(saved, fallback = null) {
+  const out = {};
+  for (const t of TABS) out[t] = saved && t in saved ? saved[t] : fallback;
+  return out;
+}
+function tabSelected() { return state.selected[state.chart] ?? null; }
+function tabShow() { return state.show[state.chart] || 'rivals'; }
+function setTabSelected(sel) {
+  state.selected[state.chart] = sel && sel.length ? sel : null;
+  store.set('selectedByTab', state.selected);
+  render();
+}
+function setTabShow(show) {
+  state.selected[state.chart] = null;
+  state.show[state.chart] = show;
+  store.set('selectedByTab', state.selected);
+  store.set('showByTab', state.show);
+  render();
+}
+
 function initialTeam() {
   const fromUrl = new URLSearchParams(location.search).get('team');
   if (fromUrl) return fromUrl;
@@ -32,7 +54,7 @@ const state = {
   lastPoll: 0, pollError: null, loading: false, firstLoad: true,
   chart: store.get('chart', 'race'), range: store.get('range', 0), mom: store.get('mom', '5h'),
   feed: store.get('feed', 'all'), limit: store.get('limit', 0), rankPeriod: store.get('rankPeriod', '24h'),
-  selected: store.get('selected', null), show: store.get('show', 'rivals'), notify: store.get('notify', false), sort: { key: 'rank', dir: 1 }, search: '', showProj: store.get('showProj', true),
+  selected: perTab(store.get('selectedByTab', {})), show: perTab(store.get('showByTab', {}), 'rivals'), notify: store.get('notify', false), sort: { key: 'rank', dir: 1 }, search: '', showProj: store.get('showProj', true),
 };
 
 // ------------------------------------------------------------------ formatting
@@ -183,12 +205,13 @@ function derive() {
 }
 
 function selection(d) {
-  if (Array.isArray(state.selected)) {
-    const sel = state.selected.filter((s) => s in d.cur.counts);
+  const picked = tabSelected();
+  if (Array.isArray(picked)) {
+    const sel = picked.filter((s) => s in d.cur.counts);
     if (sel.length) return sel;
   }
-  if (state.show === 'top10') return d.order.slice(0, 10);
-  if (state.show === 'movers') return movers(d);
+  if (tabShow() === 'top10') return d.order.slice(0, 10);
+  if (tabShow() === 'movers') return movers(d);
   return closestRivals(d);
 }
 
@@ -392,7 +415,7 @@ function closeAdd() { $('addPop').hidden = true; }
 function addTeam(slug) {
   const d = derive(); if (!d) return;
   const sel = selection(d);
-  if (!sel.includes(slug)) setPref('selected', [...sel, slug].slice(-MAX_SEL));
+  if (!sel.includes(slug)) setTabSelected([...sel, slug].slice(-MAX_SEL));
   closeAdd();
 }
 
@@ -401,8 +424,8 @@ function addTeam(slug) {
 function setTeam(slug) {
   HL = slug || null;
   store.set('team', HL);
-  state.selected = null; store.set('selected', null);
-  state.show = 'rivals'; store.set('show', 'rivals');
+  state.selected = perTab({}); store.set('selectedByTab', state.selected);
+  state.show = perTab({}, 'rivals'); store.set('showByTab', state.show);
   const url = new URL(location.href);
   if (HL) url.searchParams.set('team', HL); else url.searchParams.delete('team');
   history.replaceState(null, '', url);
@@ -509,8 +532,8 @@ function renderChart(d) {
   const sel = selection(d);
   $('chips').innerHTML = sel.map((s) => `<span class="chip"><i style="background:${colorFor(s, sel)}"></i><span>${esc(title(s))}</span><button type="button" data-unselect="${esc(s)}" aria-label="Remove ${esc(title(s))}">×</button></span>`).join('')
     + (sel.length < MAX_SEL ? '<button class="chip add" id="addChip" type="button" aria-haspopup="listbox">+ Add team</button>' : '');
-  const custom = Array.isArray(state.selected);
-  for (const b of $('showSeg').children) b.setAttribute('aria-pressed', String(!custom && b.dataset.show === state.show));
+  const custom = Array.isArray(tabSelected());
+  for (const b of $('showSeg').children) b.setAttribute('aria-pressed', String(!custom && b.dataset.show === tabShow()));
   const canProject = !!getForecast(d);
   const sw = $('projToggle');
   sw.setAttribute('aria-checked', String(state.showProj && canProject));
@@ -1194,8 +1217,7 @@ function bind() {
   $('search').addEventListener('input', (e) => { state.search = e.target.value; const d = derive(); if (d) renderBoard(d); });
   $('showSeg').addEventListener('click', (e) => {
     const b = e.target.closest('[data-show]'); if (!b) return;
-    state.selected = null; store.set('selected', null);
-    setPref('show', b.dataset.show);
+    setTabShow(b.dataset.show);
   });
   $('projToggle').addEventListener('click', () => {
     const d = derive();
@@ -1209,7 +1231,7 @@ function bind() {
     const slug = t.dataset.toggle || t.dataset.unselect;
     let sel = [...selection(d)];
     sel = sel.includes(slug) ? sel.filter((s) => s !== slug) : [...sel, slug].slice(-MAX_SEL);
-    setPref('selected', sel.length ? sel : null);
+    setTabSelected(sel);
   });
   document.querySelector('.board thead').addEventListener('click', (e) => {
     const th = e.target.closest('th[data-sort]'); if (!th) return;
