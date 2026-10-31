@@ -523,3 +523,21 @@ a.ext:hover::after { transform: translate(2px, -3px); }
 .stats .stat .v small { -webkit-text-fill-color: var(--muted); }
 .stats .stat .s { margin-top: 6px; }
 @media (max-width: 720px) { .stats { gap: 10px; } .stats .stat { padding: 14px 15px 16px; } .stats .stat .v { font-size: 24px; } }
+
+/* smooth scrolling + reveal on scroll */
+html { scroll-behavior: smooth; }
+html.reveal-ready .reveal { opacity: 0; transform: translateY(26px); filter: blur(4px); }
+html.reveal-ready .reveal.in { opacity: 1; transform: none; filter: none; transition: opacity .8s cubic-bezier(0.22, 1, 0.36, 1), transform .8s cubic-bezier(0.22, 1, 0.36, 1), filter .8s ease; transition-delay: var(--d, 0ms); }
+html.reveal-ready .stats.reveal { opacity: 1; transform: none; filter: none; }
+html.reveal-ready .stats.reveal:not(.in) .stat { opacity: 0; transform: translateY(18px) scale(0.98); }
+.stats.reveal.popping .stat { animation: pop .7s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.stats.reveal.popping .stat:nth-child(2) { animation-delay: .06s; }
+.stats.reveal.popping .stat:nth-child(3) { animation-delay: .12s; }
+.stats.reveal.popping .stat:nth-child(4) { animation-delay: .18s; }
+.stats.reveal.popping .stat:nth-child(5) { animation-delay: .24s; }
+.stats.reveal.popping .stat:nth-child(6) { animation-delay: .30s; }
+@keyframes pop { from { opacity: 0; transform: translateY(18px) scale(0.98); } }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  html.reveal-ready .reveal, html.reveal-ready .stats.reveal:not(.in) .stat { opacity: 1; transform: none; filter: none; }
+}
