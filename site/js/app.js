@@ -1287,6 +1287,13 @@ function bind() {
   };
   window.addEventListener('resize', refit);
   if ('ResizeObserver' in window) new ResizeObserver(refit).observe($('market'));
+  // Stat cards: the glow follows the cursor.
+  $('stats').addEventListener('pointermove', (e) => {
+    const card = e.target.closest('.stat'); if (!card) return;
+    const r = card.getBoundingClientRect();
+    card.style.setProperty('--mx', `${e.clientX - r.left}px`);
+    card.style.setProperty('--my', `${e.clientY - r.top}px`);
+  });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && Date.now() - state.lastPoll > 30e3) poll();
   });
