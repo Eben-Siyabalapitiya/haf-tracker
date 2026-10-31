@@ -34,6 +34,7 @@
       </div>
     </div>
   </header>
+  <div class="ticker" aria-label="Live ticker"><div class="ticker-track" id="tickerTrack"></div></div>
 
   <main class="wrap">
     <section class="hero">
@@ -77,6 +78,16 @@
           </div>
           <div class="chart-box"><canvas id="chart" aria-label="Vote history chart" role="img"></canvas><div class="chart-empty" id="chartEmpty" hidden></div></div>
           <div class="race" id="race" hidden></div>
+        </section>
+
+        <section class="card" aria-labelledby="mkTitle">
+          <div class="card-head">
+            <div>
+              <p class="label">Who's hot, who's not</p>
+              <h2 id="mkTitle">Market board</h2>
+            </div>
+          </div>
+          <div id="market"></div>
         </section>
 
         <section class="card" aria-labelledby="momTitle">
@@ -137,6 +148,12 @@
       </div>
 
       <aside class="col-side">
+        <section class="card sig-card" aria-labelledby="sigTitle">
+          <p class="label">Read of the race</p>
+          <h2 id="sigTitle">Signals</h2>
+          <ol class="signals" id="signals"></ol>
+        </section>
+
         <section class="card feed-card" aria-labelledby="feedTitle">
           <div class="card-head tight">
             <div>

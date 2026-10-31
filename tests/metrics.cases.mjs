@@ -244,6 +244,61 @@ export const cases = [
     eq(M.forecast(r, iso('2026-10-31T00:00:00Z'), {}), null);
   }],
 
+  ['sessions follow Toronto clock blocks', () => {
+    // 10:54 PM Oct 29 → 11:07 PM Oct 30 Toronto (EDT, UTC-4)
+    const s = M.sessionsBetween(iso('2026-10-30T02:54:00Z'), iso('2026-10-31T03:07:00Z'));
+    eq(s.map((x) => `${x.day} ${x.name}${x.live ? '*' : ''}`), [
+      '2026-10-29 Evening', '2026-10-30 Overnight', '2026-10-30 Morning', '2026-10-30 Afternoon', '2026-10-30 Evening*']);
+    eq(new Date(s[1].start).toISOString(), '2026-10-30T04:00:00.000Z');
+    eq(new Date(s[2].start).toISOString(), '2026-10-30T10:00:00.000Z');
+  }],
+
+  ['session gains need a collection near the session start', () => {
+    const r = recs(
+      ['2026-10-30T09:50:00Z', '2026-10-30T09:50:00Z', { a: 10 }],     // just before 6 AM Toronto
+      ['2026-10-30T13:00:00Z', '2026-10-30T13:00:00Z', { a: 25 }],
+      ['2026-10-30T16:05:00Z', '2026-10-30T16:05:00Z', { a: 40 }],     // just after noon
+      ['2026-10-30T17:00:00Z', '2026-10-30T17:00:00Z', { a: 44 }]);
+    const s = M.sessionsBetween(r[0].t, r[r.length - 1].u);
+    const g = M.sessionGains(r, ['a'], s);
+    eq(s.map((x) => x.name), ['Overnight', 'Morning', 'Afternoon']);
+    eq(g.a[0], null);                       // tracking began 10 min before the overnight block ended
+    eq(g.a[1].gain, 30);                    // 10 → 40 (6 AM → noon)
+    eq(g.a[2].gain, 4);                     // 40 → 44 so far
+  }],
+
+  ['momentum levels: surging, cooling and stalled', () => {
+    const mk = (recent, base) => ({ parts: { a: [{ key: 'recent', rate: recent }, { key: 'week', rate: base, weight: 0.55 }] } });
+    const r = recs(['2026-10-30T10:00:00Z', '2026-10-30T10:00:00Z', { a: 1 }], ['2026-10-30T12:00:00Z', '2026-10-30T12:00:00Z', { a: 2 }]);
+    eq(M.momentum(r, mk(12, 3), 'a').level, 'surging');
+    eq(M.momentum(r, mk(5, 3), 'a').level, 'heating');
+    eq(M.momentum(r, mk(1, 3), 'a').level, 'cooling');
+    eq(M.momentum(r, mk(3, 3), 'a').level, 'steady');
+    const flat = recs(['2026-10-30T10:00:00Z', '2026-10-30T12:00:00Z', { a: 5 }]);
+    eq(M.momentum(flat, mk(0, 3), 'a').level, 'stalled');
+  }],
+
+  ['overtake watch finds when a faster chaser passes', () => {
+    const f = { at: 0, nearHours: 3, remainingHours: 24, near: { lead: 1, chase: 11 }, base: { lead: 2, chase: 4 }, projected: { lead: 0, chase: 0 } };
+    const o = M.overtake(f, { lead: 100, chase: 60 }, 'lead', 'chase', 24 * 3600e3);
+    // After 3h: lead 103, chase 93 (gap 10). Then chase gains 2/h more → passes 5h later, at 8h.
+    eq(o.closingPerHour, 10);
+    ok(Math.abs(o.passAt - 8 * 3600e3) <= 5 * 60e3, `passAt ${o.passAt / 3600e3}h`);
+    const slow = M.overtake(f, { lead: 200, chase: 60 }, 'lead', 'chase', 24 * 3600e3);
+    eq(slow.passAt, null);
+  }],
+
+  ['funding outlook from forecast ranges', () => {
+    const f = {
+      projected: { a: 1000, b: 900, c: 800, d: 700, e: 600, x: 590, y: 300 },
+      low: { a: 950, b: 850, c: 750, d: 650, e: 550, x: 560, y: 280 },
+      high: { a: 1050, b: 950, c: 850, d: 750, e: 650, x: 620, y: 320 },
+    };
+    const o = M.fundingOutlook(f, 5);
+    eq([o.a, o.b, o.c], ['safe', 'safe', 'safe']);
+    eq([o.e, o.x, o.y], ['likely', 'in reach', 'long shot']);
+  }],
+
   ['chart series follow observations only', () => {
     const r = recs(['2026-10-29T13:00:00Z', '2026-10-29T13:30:00Z', { a: 5 }],
       ['2026-10-29T14:00:00Z', '2026-10-29T14:00:00Z', { a: 9 }]);

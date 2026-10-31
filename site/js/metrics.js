@@ -351,7 +351,7 @@ export function forecast(records, closeMs, projects = {}) {
   if (!cur) return null;
   const remainingHours = Math.max(0, closeMs - cur.time) / HOUR;
   const nearH = Math.min(MOMENTUM_HOURS, remainingHours), restH = remainingHours - nearH;
-  const out = { at: cur.time, remainingHours, nearHours: nearH, projected: {}, low: {}, high: {}, pacePerHour: {}, parts: {}, trend: {} };
+  const out = { at: cur.time, remainingHours, nearHours: nearH, projected: {}, low: {}, high: {}, pacePerHour: {}, near: {}, base: {}, parts: {}, trend: {} };
   let any = false;
   for (const slug of Object.keys(cur.counts)) {
     const parts = [];
@@ -387,6 +387,8 @@ export function forecast(records, closeMs, projects = {}) {
       ...p,
       use: p.key === 'recent' ? `next ${Math.round(nearH)}h` : longRun.length > 1 ? `then ${Math.round(p.weight / total * 100)}%` : 'then 100%',
     }));
+    out.near[slug] = near;
+    out.base[slug] = base;
     out.projected[slug] = Math.round(now + near * nearH + base * restH);
     out.low[slug] = Math.round(now + Math.min(near, baseLo) * nearH + baseLo * restH);
     out.high[slug] = Math.round(now + Math.max(near, baseHi) * nearH + baseHi * restH);
@@ -400,6 +402,105 @@ export function forecast(records, closeMs, projects = {}) {
     out.trend[slug] = trend;
   }
   return any ? out : null;
+}
+
+// ------------------------------------------------------------------ market read-outs
+
+/** Toronto "trading sessions": overnight 0–6, morning 6–12, afternoon 12–18, evening 18–24. */
+export const SESSION_NAMES = ['Overnight', 'Morning', 'Afternoon', 'Evening'];
+
+export function sessionsBetween(fromMs, toMs) {
+  const out = [];
+  let day = zonedMidnight(fromMs);
+  while (day <= toMs) {
+    for (let i = 0; i < 4; i++) {
+      const start = day + i * 6 * HOUR, end = start + 6 * HOUR;
+      if (end <= fromMs || start > toMs) continue;
+      out.push({ start, end, name: SESSION_NAMES[i], day: zonedDateKey(day + HOUR), live: toMs < end });
+    }
+    day = zonedMidnight(day + 30 * HOUR);
+  }
+  return out;
+}
+
+/**
+ * Net gain in each session, from the totals at its start to its end (or now, if it's
+ * still going). null when tracking hadn't started by the session's start.
+ */
+export function sessionGains(records, slugs, sessions) {
+  const cur = current(records);
+  const out = {};
+  for (const s of sessions) {
+    const a = baselineAt(records, s.start, 30 * MIN, cur.time + 1);
+    const endT = s.live ? cur.time : s.end;
+    const b = s.live ? cur : baselineAt(records, endT, 30 * MIN, cur.time + 1);
+    for (const slug of slugs) {
+      (out[slug] ||= []).push(a && b && slug in a.counts && slug in b.counts
+        ? { gain: b.counts[slug] - a.counts[slug], hours: (b.time - a.time) / HOUR } : null);
+    }
+  }
+  return out;
+}
+
+/** Momentum from a forecast's paces: surging, heating, steady, cooling or stalled. */
+export function momentum(records, f, slug) {
+  const parts = f?.parts?.[slug];
+  if (!parts) return { level: 'steady', ratio: 1 };
+  const recent = parts.find((p) => p.key === 'recent');
+  const longRun = parts.filter((p) => p.key !== 'recent');
+  const base = longRun.length ? longRun.reduce((s, p) => s + Math.max(0, p.rate) * p.weight, 0) / longRun.reduce((s, p) => s + p.weight, 0) : null;
+  const quiet = measuredPace(records, slug, 2 * HOUR);
+  if (quiet && quiet.delta === 0 && quiet.hours >= 1.5 && base > 0.5) return { level: 'stalled', ratio: 0, base, recent: 0, quietHours: quiet.hours };
+  if (!recent || base == null) return { level: 'steady', ratio: 1, base, recent: recent?.rate };
+  const r = Math.max(0, recent.rate), ratio = base > 0 ? r / base : (r > 0 ? Infinity : 1);
+  let level = 'steady';
+  if (ratio >= 2.5 && r - base >= 3) level = 'surging';
+  else if (ratio >= 1.35 && r - base >= 0.5) level = 'heating';
+  else if (ratio <= 0.65 && base - r >= 0.5) level = 'cooling';
+  return { level, ratio, base, recent: r };
+}
+
+/** Forecast path for one project: total at time t (recent pace first, then long-run pace). */
+export function pathAt(f, counts, slug, t) {
+  const h = Math.max(0, (t - f.at) / HOUR);
+  return counts[slug] + f.near[slug] * Math.min(h, f.nearHours) + f.base[slug] * Math.max(0, h - f.nearHours);
+}
+
+/**
+ * When would `chaser` pass `leader` if both follow their forecast paths?
+ * {gap, closingPerHour, passAt (ms) | null, beforeClose}
+ */
+export function overtake(f, counts, leader, chaser, closeMs) {
+  if (!f || !(leader in f.projected) || !(chaser in f.projected)) return null;
+  const gap = counts[leader] - counts[chaser];
+  const closingPerHour = f.near[chaser] - f.near[leader];
+  let passAt = null;
+  for (let t = f.at; t <= closeMs; t += 5 * MIN) {
+    if (pathAt(f, counts, chaser, t) > pathAt(f, counts, leader, t)) { passAt = t; break; }
+  }
+  return { gap, closingPerHour, passAt, beforeClose: passAt != null };
+}
+
+/**
+ * Funding outlook from forecast ranges (top `spots` funded):
+ *   safe       even its worst case beats every rival's best case for a top spot
+ *   likely     forecast inside the top spots
+ *   in reach   forecast outside, but its best case gets into the top spots
+ *   long shot  even its best case falls short
+ */
+export function fundingOutlook(f, spots = 5) {
+  const slugs = Object.keys(f.projected);
+  const order = slugs.slice().sort((a, b) => f.projected[b] - f.projected[a]);
+  const cut = f.projected[order[spots - 1]];
+  const out = {};
+  for (const s of slugs) {
+    const beatenAtWorst = slugs.filter((o) => o !== s && f.high[o] >= f.low[s]).length;
+    if (beatenAtWorst < spots) out[s] = 'safe';
+    else if (order.indexOf(s) < spots) out[s] = 'likely';
+    else if (f.high[s] >= cut) out[s] = 'in reach';
+    else out[s] = 'long shot';
+  }
+  return out;
 }
 
 // ------------------------------------------------------------------ gaps

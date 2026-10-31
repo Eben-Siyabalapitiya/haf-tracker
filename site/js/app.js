@@ -218,8 +218,12 @@ function render() {
   renderBell();
   renderStatus(d);
   if (!d) { renderEmpty(); return; }
+  const f = getForecast(d);
+  renderTicker(d, f);
   renderHero(d);
   renderChart(d);
+  renderMarket(d, f);
+  renderSignals(d, f);
   renderMomentum(d);
   renderBoard(d);
   renderFeed(d);
@@ -871,6 +875,180 @@ function shortLabel(t) {
   if (/faraday/i.test(t)) return 'Faraday';
   if (/^ramp/i.test(t)) return 'Ramp';
   return t.split(' ')[0];
+}
+
+// ---------------------------------------------------------------- market read-outs
+
+const LEVEL = {
+  surging: { tag: 'Surging', arrow: '▲▲' },
+  heating: { tag: 'Heating up', arrow: '▲' },
+  steady: { tag: 'Steady', arrow: '▸' },
+  cooling: { tag: 'Cooling', arrow: '▼' },
+  stalled: { tag: 'Stalled', arrow: '■' },
+};
+const OUTLOOK = { safe: 'Safe', likely: 'Likely', 'in reach': 'In reach', 'long shot': 'Long shot' };
+const dayFmt = new Intl.DateTimeFormat('en-US', { timeZone: M.TZ, weekday: 'short' });
+const SESSION_SHORT = { Overnight: '12–6a', Morning: '6a–12p', Afternoon: '12–6p', Evening: '6p–12a' };
+
+function spark(points, color, w = 84, h = 22) {
+  if (points.length < 2) return '';
+  const xs = points.map((p) => p.x), ys = points.map((p) => p.y);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const px = (x) => ((x - x0) / (x1 - x0 || 1)) * (w - 2) + 1;
+  const py = (y) => h - 2 - ((y - y0) / (y1 - y0 || 1)) * (h - 4);
+  const path = points.map((p, i) => `${i ? 'L' : 'M'}${px(p.x).toFixed(1)} ${py(p.y).toFixed(1)}`).join('');
+  const last = points[points.length - 1];
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true"><path d="${path}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round"/><circle cx="${px(last.x).toFixed(1)}" cy="${py(last.y).toFixed(1)}" r="2.2" fill="${color}"/></svg>`;
+}
+const LEVEL_COLOR = { surging: '#ff5147', heating: '#ff9a3d', steady: '#a39e96', cooling: '#6fb6ff', stalled: '#75716b' };
+
+function renderTicker(d, f) {
+  const el = $('tickerTrack');
+  if (!el) return;
+  const base = d.bases['1h'] || { counts: d.records[0].c };
+  let slugs = d.order.slice(0, 15);
+  if (!slugs.includes(HL)) slugs = [HL, ...slugs];
+  const items = slugs.map((s) => {
+    const lvl = M.momentum(d.records, f, s).level;
+    const ch = s in base.counts ? d.cur.counts[s] - base.counts[s] : null;
+    const pct = ch != null && base.counts[s] ? (ch / base.counts[s]) * 100 : null;
+    return `<span class="tk ${lvl} ${s === HL ? 'rex' : ''}"><b>${d.ranks[s]}</b>${esc(shortLabel(title(s)).toUpperCase())}<em>${fmt(d.cur.counts[s])}</em>${ch == null ? '' : `<i>${LEVEL[lvl].arrow} ${signed(ch)}${pct != null ? ` ${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%` : ''}</i>`}</span>`;
+  }).join('');
+  const label = d.bases['1h'] ? 'last hour' : 'since tracking began';
+  el.innerHTML = `<div class="tk-group"><span class="tk-label">${label}</span>${items}</div><div class="tk-group" aria-hidden="true"><span class="tk-label">${label}</span>${items}</div>`;
+}
+
+function renderMarket(d, f) {
+  const el = $('market');
+  if (!el) return;
+  const sessions = M.sessionsBetween(d.first, d.cur.time).slice(-5);
+  let slugs = d.order.slice(0, 10);
+  if (!slugs.includes(HL)) slugs.push(HL);
+  const gains = M.sessionGains(d.records, slugs, sessions);
+  const outlook = f ? M.fundingOutlook(f, FUNDED) : {};
+  const rates = slugs.flatMap((s) => gains[s].filter(Boolean).map((g) => (g.hours > 0 ? g.gain / g.hours : 0)));
+  const maxRate = Math.max(1, ...rates);
+  const heat = (g) => {
+    if (!g) return '';
+    const r = g.hours > 0 ? g.gain / g.hours : 0;
+    if (r < 0) return 'background: rgba(111,182,255,0.16)';
+    const t = Math.sqrt(Math.min(1, r / maxRate));
+    // ember → orange → red as the pace climbs
+    const hue = 28 - 24 * t, alpha = 0.06 + 0.5 * t;
+    return `background: hsla(${hue.toFixed(0)}, 95%, 55%, ${alpha.toFixed(2)})`;
+  };
+  const head = sessions.map((s) => `<th class="num"><span>${dayFmt.format(s.start + HOUR)}${s.live ? ' · now' : ''}</span>${SESSION_SHORT[s.name]}</th>`).join('');
+  const rows = slugs.map((s) => {
+    const m = M.momentum(d.records, f, s);
+    const cells = gains[s].map((g, i) => {
+      if (!g) return '<td class="num cell none" data-tip="Not tracked from the start of this block">—</td>';
+      const sess = sessions[i];
+      const tip = `${sess.name} ${dayFmt.format(sess.start + HOUR)} (${SESSION_SHORT[sess.name]})${sess.live ? ', so far' : ''}: ${signed(g.gain)} in ${dur(g.hours * HOUR)} · ${(g.gain / (g.hours || 1)).toFixed(1)}/h`;
+      return `<td class="num cell ${g.gain < 0 ? 'neg' : ''}" style="${heat(g)}" data-tip="${esc(tip)}">${signed(g.gain)}</td>`;
+    }).join('');
+    const pace = f?.near?.[s];
+    const o = outlook[s];
+    return `<tr class="${s === HL ? 'rex' : ''}">
+      <td class="num r">${place(d.ranks[s], false)}</td>
+      <td class="nm"><span>${esc(title(s))}</span></td>
+      ${cells}
+      <td class="num pace">${pace == null ? '—' : `${pace.toFixed(1)}<small>/h</small>`}</td>
+      <td><span class="lvl ${m.level}" data-tip="${esc(levelTip(m))}">${LEVEL[m.level].arrow} ${LEVEL[m.level].tag}</span></td>
+      <td>${o ? `<span class="outlook ${o.replace(' ', '-')}">${OUTLOOK[o]}</span>` : ''}</td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `<div class="mk-wrap"><table class="mk">
+    <thead><tr><th class="num">#</th><th>Project</th>${head}<th class="num">Pace now</th><th>Momentum</th><th>Outlook</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>
+    <div class="mk-legend"><span><i class="sw s1"></i><i class="sw s2"></i><i class="sw s3"></i> hotter = more votes per hour</span>
+    <span>Outlook compares predicted ranges for the top ${FUNDED}: <b class="outlook safe">Safe</b> holds even in its worst case</span></div>`;
+}
+
+function levelTip(m) {
+  if (m.level === 'stalled') return `No new votes in the last ${dur(m.quietHours * HOUR)}.`;
+  if (m.base == null || m.recent == null) return 'Not enough history to compare yet.';
+  return `Now ${m.recent.toFixed(1)}/h vs a usual ${m.base.toFixed(1)}/h (${m.ratio === Infinity ? '∞' : m.ratio.toFixed(1)}×).`;
+}
+
+/** Plain-language calls about what's happening and what it means, most important first. */
+function buildSignals(d, f) {
+  if (!f) return [];
+  const out = [];
+  const close = CLOSE;
+  const sparkFrom = d.cur.time - 6 * HOUR;
+  const add = (score, slug, kind, title2, body) => out.push({ score, slug, kind, title: title2, body });
+  // Overtake watch: Hack The Rex vs the next two, and both sides of the funding line.
+  const pairs = [];
+  const iRex = d.order.indexOf(HL);
+  if (iRex >= 0) {
+    if (iRex > 0) pairs.push([d.order[iRex - 1], HL]);
+    for (const k of [1, 2]) if (d.order[iRex + k]) pairs.push([HL, d.order[iRex + k]]);
+  }
+  if (d.order[FUNDED]) pairs.push([d.order[FUNDED - 1], d.order[FUNDED]]);
+  const seen = new Set();
+  for (const [lead, chase] of pairs) {
+    const key = lead + chase;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const o = M.overtake(f, d.cur.counts, lead, chase, close);
+    if (!o) continue;
+    const funding = d.ranks[lead] === FUNDED;
+    const who = `${title(chase)} vs ${title(lead)}`;
+    if (o.passAt) {
+      const inH = (o.passAt - d.cur.time) / HOUR;
+      add(funding ? 90 : chase === HL || lead === HL ? 95 : 60, chase, 'overtake', `Overtake watch · ${who}`,
+        `${o.gap} behind${o.closingPerHour > 0 ? `, closing ${o.closingPerHour.toFixed(1)}/h right now` : ''}. On current forecasts it passes in ~${dur(inH * HOUR)} (${when(o.passAt)})${funding ? ', taking the last funded spot' : ''}.`);
+    } else if (o.closingPerHour > 0.3 && o.gap < 150) {
+      add(funding ? 70 : 50, chase, 'closing', `Closing in · ${who}`,
+        `${o.gap} behind and gaining ${o.closingPerHour.toFixed(1)}/h right now, but the forecast has it running out of time before the close.`);
+    } else if (lead === HL || chase === HL) {
+      add(30, lead === HL ? chase : lead, 'gap', `Gap holding · ${who}`, `${lead === HL ? 'Lead' : 'Gap'} of ${o.gap}. Not on course to change before the close.`);
+    }
+  }
+  if (d.order[FUNDED] && Math.abs(d.cur.counts[d.order[FUNDED - 1]] - d.cur.counts[d.order[FUNDED]]) <= 10) {
+    add(100, d.order[FUNDED], 'line', 'Funding line is a coin flip',
+      `#${FUNDED} ${title(d.order[FUNDED - 1])} and #${FUNDED + 1} ${title(d.order[FUNDED])} are ${Math.abs(d.cur.counts[d.order[FUNDED - 1]] - d.cur.counts[d.order[FUNDED]])} apart.`);
+  }
+  // Momentum calls for the top 15.
+  for (const s of d.order.slice(0, 15)) {
+    const m = M.momentum(d.records, f, s);
+    const top = d.ranks[s] <= FUNDED + 3 || s === HL;
+    if (m.level === 'surging') {
+      add(80 + Math.min(15, m.ratio), s, 'surging', `${title(s)} is surging`,
+        `${m.recent.toFixed(1)} votes/h, about ${m.ratio.toFixed(1)}× its usual ${m.base.toFixed(1)}/h. Bursts like this usually fade, so the forecast lets it cool after ${Math.round(f.nearHours)}h: ~${fmt(f.projected[s])} at close.`);
+    } else if (m.level === 'heating' && top) {
+      add(55, s, 'heating', `${title(s)} is heating up`, `${m.recent.toFixed(1)}/h vs a usual ${m.base.toFixed(1)}/h.`);
+    } else if (m.level === 'cooling' && top) {
+      add(s === HL ? 85 : 45, s, 'cooling', `${title(s)} is slowing down`,
+        `${m.recent.toFixed(1)}/h now vs a usual ${m.base.toFixed(1)}/h. If it stays this slow it ends near ${fmt(Math.round(d.cur.counts[s] + m.recent * f.remainingHours))} instead of ~${fmt(f.projected[s])}.`);
+    } else if (m.level === 'stalled' && top) {
+      add(s === HL ? 85 : 40, s, 'stalled', `${title(s)} has stalled`, `No new votes in ${dur(m.quietHours * HOUR)}.`);
+    }
+  }
+  // Biggest session so far today.
+  const sessions = M.sessionsBetween(d.first, d.cur.time);
+  const last = sessions.filter((s) => !s.live).slice(-1)[0];
+  if (last) {
+    const g = M.sessionGains(d.records, d.order.slice(0, 15), [last]);
+    const best = Object.entries(g).filter(([, v]) => v[0]).sort((a, b) => b[1][0].gain - a[1][0].gain)[0];
+    if (best && best[1][0].gain > 0) {
+      add(35, best[0], 'session', `Won the ${last.name.toLowerCase()} (${SESSION_SHORT[last.name]})`,
+        `${title(best[0])} gained ${signed(best[1][0].gain)} between ${SESSION_SHORT[last.name].replace('–', ' and ')}, the most of any project.`);
+    }
+  }
+  return out.sort((a, b) => b.score - a.score).slice(0, 7).map((x) => ({
+    ...x, spark: spark(M.seriesFor(d.records, x.slug, sparkFrom), x.slug === HL ? REX : (LEVEL_COLOR[x.kind] || '#e8762c')),
+  }));
+}
+
+function renderSignals(d, f) {
+  const el = $('signals');
+  if (!el) return;
+  const list = buildSignals(d, f);
+  el.innerHTML = list.length ? list.map((x) => `<li class="sig ${x.kind} ${x.slug === HL ? 'rex' : ''}">
+      <div class="sig-top"><span class="sig-title">${esc(x.title)}</span>${x.spark}</div>
+      <p>${esc(x.body)}</p></li>`).join('')
+    : '<li class="empty">Signals appear once there is enough history to compare paces.</li>';
 }
 
 // ---------------------------------------------------------------- notifications
