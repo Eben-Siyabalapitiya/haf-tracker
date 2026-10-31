@@ -444,11 +444,10 @@ table.hist .rexcol { color: var(--rex); }
 .pill[data-state="loading"] .sync, .pill[data-state="closed"] .sync { display: none; }
 
 /* made by */
-.made { margin-top: 30px; padding: 20px 22px; border: 1px solid var(--line); border-radius: var(--radius); display: grid; grid-template-columns: 1fr auto; gap: 10px 24px; align-items: center; background: linear-gradient(120deg, rgba(232, 118, 44, 0.06), transparent 55%); }
+.made { margin-top: 0; padding: 20px 22px; border: 1px solid var(--line); border-radius: var(--radius); display: grid; grid-template-columns: 1fr auto; gap: 10px 24px; align-items: center; background: linear-gradient(120deg, rgba(232, 118, 44, 0.06), transparent 55%); }
 .made-by { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 17px; font-weight: 600; color: var(--text); }
 .made-k { font: 500 10.5px/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); margin-right: 4px; }
-.made-by a { color: var(--text); text-decoration: none; background: linear-gradient(var(--accent), var(--accent)) 0 100% / 0 2px no-repeat; transition: background-size .25s; padding-bottom: 2px; }
-.made-by a:hover { background-size: 100% 2px; }
+
 .made-by .amp { color: var(--faint); font-weight: 400; }
 .stamp { grid-row: span 2; display: grid; justify-items: center; gap: 2px; padding: 10px 16px; border: 1.5px dashed rgba(255, 210, 63, 0.55); border-radius: 10px; transform: rotate(-3deg); text-decoration: none; color: var(--rex); transition: transform .2s; }
 .stamp:hover { transform: rotate(0deg); }
@@ -474,3 +473,15 @@ table.hist .rexcol { color: var(--rex); }
 .board tr.morerow button:hover { border-color: var(--accent); }
 .board tr.gaprow td { padding: 2px 10px; text-align: center; color: var(--faint); border-bottom: 1px solid var(--line); background: var(--surface); }
 @media (max-width: 720px) { .board tr.morerow, .board tr.gaprow { display: block; } .board tr.morerow td, .board tr.gaprow td { display: block; } }
+
+/* links that look like links: underline + small arrow */
+a.ext { color: var(--text); text-decoration: underline; text-decoration-color: rgba(239, 235, 228, 0.35); text-decoration-thickness: 1px; text-underline-offset: 4px; transition: text-decoration-color .15s, color .15s; white-space: nowrap; }
+a.ext::after { content: '↗'; display: inline-block; margin-left: 3px; font-size: 0.78em; color: var(--accent); transform: translateY(-1px); transition: transform .15s; }
+a.ext:hover { color: #fff; text-decoration-color: var(--accent); }
+a.ext:hover::after { transform: translate(2px, -3px); }
+.made-top { margin: 14px 0 0; font-size: 13px; color: var(--muted); line-height: 1.7; max-width: 640px; }
+.made-top a.ext { font-weight: 600; }
+
+.foot-line { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 16px; font-size: 12.5px; color: var(--faint); }
+.foot-line span + span::before { content: ''; display: inline-block; width: 3px; height: 3px; border-radius: 50%; background: var(--line-2); margin: 0 12px 2px -14px; vertical-align: middle; }
+.foot-line a.ext { color: var(--muted); }
