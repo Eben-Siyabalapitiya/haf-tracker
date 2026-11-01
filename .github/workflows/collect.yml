@@ -28,7 +28,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'push' }}
 
 env:
-  STOP_AFTER: "2026-11-01T05:00:00Z"   # an hour after voting closes
+  SLOW_AFTER: "2026-11-01T05:00:00Z"   # an hour after voting closes, check less often
 
 jobs:
   collect:
@@ -59,8 +59,9 @@ jobs:
           # Data commits are attributed to the repository owner.
           git config user.name "${{ github.repository_owner }}"
           git config user.email "${{ github.repository_owner_id }}+${{ github.repository_owner }}@users.noreply.github.com"
-          if [[ "$(date -u +%FT%TZ)" > "$STOP_AFTER" ]]; then
-            MINUTES=1
+          # After voting closes, keep watching for late changes, just less often.
+          if [[ "$(date -u +%FT%TZ)" > "$SLOW_AFTER" ]]; then
+            export INTERVAL=300 FULL_EVERY=6
           fi
           bash scripts/collect_loop.sh
 
@@ -84,8 +85,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [[ "$(date -u +%FT%TZ)" > "$STOP_AFTER" ]]; then
-            echo "Voting is over; not starting another run."
-            exit 0
-          fi
           gh workflow run collect.yml --repo "${{ github.repository }}" --ref "${{ github.ref_name }}"
