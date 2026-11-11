@@ -7,12 +7,12 @@
  "source_checked_at": "2026-11-04T23:19:58Z",
  "source_today": null,
  "warnings": [],
- "consecutive_failures": 145,
+ "consecutive_failures": 146,
  "cycle_id": "00000000-0000-4000-8000-000000000f26",
  "last_snapshot": "2026-11-04T23:19:57Z",
  "source_facts_at": "2026-11-04T23:04:57Z",
  "last_error": {
-  "at": "2026-11-11T00:09:39Z",
+  "at": "2026-11-11T01:14:38Z",
   "message": "no vote totals found in page"
  }
 }
