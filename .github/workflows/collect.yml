@@ -56,9 +56,9 @@ jobs:
           BRANCH: ${{ github.ref_name }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Data commits are attributed to the repository owner.
-          git config user.name "${{ github.repository_owner }}"
-          git config user.email "${{ github.repository_owner_id }}+${{ github.repository_owner }}@users.noreply.github.com"
+          # Data commits come from the Actions bot so they stay off the owner's contribution graph.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
           # After voting closes, keep watching for late changes, just less often.
           if [[ "$(date -u +%FT%TZ)" > "$SLOW_AFTER" ]]; then
             export INTERVAL=300 FULL_EVERY=6
