@@ -1,23 +1,12 @@
 name: Collect votes
 
 on:
-  # Each run collects every 30 seconds for ~5.5 hours, then starts the next run itself,
-  # so collection doesn't depend on GitHub's scheduler (which can be late or skip runs).
+  # Voting closed Oct 31, so collection only runs when started by hand.
   workflow_dispatch:
     inputs:
       minutes:
         description: "How long this run keeps collecting (minutes)"
         default: "330"
-  # Restart right away when the collector itself changes (this also cancels the running one).
-  push:
-    branches: [main]
-    paths:
-      - "collector/**"
-      - "scripts/collect_loop.sh"
-      - ".github/workflows/collect.yml"
-  # Backup in case the chain ever breaks. Queues behind a running collector.
-  schedule:
-    - cron: "*/30 * * * *"
 
 permissions: {}
 
@@ -74,15 +63,3 @@ jobs:
       id-token: write
     uses: ./.github/workflows/site.yml
 
-  next:
-    needs: collect
-    if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
-    permissions:
-      actions: write
-    steps:
-      - name: Start the next run
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh workflow run collect.yml --repo "${{ github.repository }}" --ref "${{ github.ref_name }}"
